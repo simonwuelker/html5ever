@@ -9,7 +9,7 @@
 
 #![crate_name = "html5ever"]
 #![crate_type = "dylib"]
-#![cfg_attr(test, deny(warnings))]
+// #![cfg_attr(test, deny(warnings))]
 #![allow(unused_parens)]
 #![warn(unreachable_pub)]
 

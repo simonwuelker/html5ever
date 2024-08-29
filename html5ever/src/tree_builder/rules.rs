@@ -38,29 +38,29 @@ where
 
         match mode {
             //§ the-initial-insertion-mode
-            Initial => match_token!(token {
-                CharacterTokens(NotSplit, text) => SplitWhitespace(text),
-                CharacterTokens(Whitespace, _) => Done,
-                CommentToken(text) => self.append_comment_to_doc(text),
+            InsertionMode::Initial => match_token!(token {
+                Token::CharacterTokens(SplitStatus::NotSplit, text) => ProcessResult::SplitWhitespace(text),
+                Token::CharacterTokens(SplitStatus::Whitespace, _) => ProcessResult::Done,
+                Token::CommentToken(text) => self.append_comment_to_doc(text),
                 token => {
                     if !self.opts.iframe_srcdoc {
                         self.unexpected(&token);
                         self.set_quirks_mode(Quirks);
                     }
-                    Reprocess(BeforeHtml, token)
+                    ProcessResult::Reprocess(InsertionMode::BeforeHtml, token)
                 }
             }),
 
             //§ the-before-html-insertion-mode
-            BeforeHtml => match_token!(token {
-                CharacterTokens(NotSplit, text) => SplitWhitespace(text),
-                CharacterTokens(Whitespace, _) => Done,
-                CommentToken(text) => self.append_comment_to_doc(text),
+            InsertionMode::BeforeHtml => match_token!(token {
+                Token::CharacterTokens(SplitStatus::NotSplit, text) => ProcessResult::SplitWhitespace(text),
+                Token::CharacterTokens(SplitStatus::Whitespace, _) => ProcessResult::Done,
+                Token::CommentToken(text) => self.append_comment_to_doc(text),
 
                 tag @ <html> => {
                     self.create_root(tag.attrs);
-                    self.mode.set(BeforeHead);
-                    Done
+                    self.mode.set(InsertionMode::BeforeHead);
+                    ProcessResult::Done
                 }
 
                 </head> </body> </html> </br> => else,
@@ -69,22 +69,22 @@ where
 
                 token => {
                     self.create_root(vec!());
-                    Reprocess(BeforeHead, token)
+                    ProcessResult::Reprocess(InsertionMode::BeforeHead, token)
                 }
             }),
 
             //§ the-before-head-insertion-mode
-            BeforeHead => match_token!(token {
-                CharacterTokens(NotSplit, text) => SplitWhitespace(text),
-                CharacterTokens(Whitespace, _) => Done,
-                CommentToken(text) => self.append_comment(text),
+            InsertionMode::BeforeHead => match_token!(token {
+                Token::CharacterTokens(SplitStatus::NotSplit, text) => ProcessResult::SplitWhitespace(text),
+                Token::CharacterTokens(SplitStatus::Whitespace, _) => ProcessResult::Done,
+                Token::CommentToken(text) => self.append_comment(text),
 
-                <html> => self.step(InBody, token),
+                <html> => self.step(InsertionMode::InBody, token),
 
                 tag @ <head> => {
                     *self.head_elem.borrow_mut() = Some(self.insert_element_for(tag));
-                    self.mode.set(InHead);
-                    Done
+                    self.mode.set(InsertionMode::InHead);
+                    ProcessResult::Done
                 }
 
                 </head> </body> </html> </br> => else,
@@ -93,22 +93,22 @@ where
 
                 token => {
                     *self.head_elem.borrow_mut() = Some(self.insert_phantom(local_name!("head")));
-                    Reprocess(InHead, token)
+                    ProcessResult::Reprocess(InsertionMode::InHead, token)
                 }
             }),
 
             //§ parsing-main-inhead
-            InHead => match_token!(token {
-                CharacterTokens(NotSplit, text) => SplitWhitespace(text),
-                CharacterTokens(Whitespace, text) => self.append_text(text),
-                CommentToken(text) => self.append_comment(text),
+            InsertionMode::InHead => match_token!(token {
+                Token::CharacterTokens(SplitStatus::NotSplit, text) => ProcessResult::SplitWhitespace(text),
+                Token::CharacterTokens(SplitStatus::Whitespace, text) => self.append_text(text),
+                Token::CommentToken(text) => self.append_comment(text),
 
-                <html> => self.step(InBody, token),
+                <html> => self.step(InsertionMode::InBody, token),
 
                 tag @ <base> <basefont> <bgsound> <link> <meta> => {
                     // FIXME: handle <meta charset=...> and <meta http-equiv="Content-Type">
                     self.insert_and_pop_element_for(tag);
-                    DoneAckSelfClosing
+                    ProcessResult::DoneAckSelfClosing
                 }
 
                 tag @ <title> => {
@@ -118,8 +118,8 @@ where
                 tag @ <noframes> <style> <noscript> => {
                     if (!self.opts.scripting_enabled) && (tag.name == local_name!("noscript")) {
                         self.insert_element_for(tag);
-                        self.mode.set(InHeadNoscript);
-                        Done
+                        self.mode.set(InsertionMode::InHeadNoscript);
+                        ProcessResult::Done
                     } else {
                         self.parse_raw_data(tag, Rawtext)
                     }
@@ -139,19 +139,19 @@ where
 
                 </head> => {
                     self.pop();
-                    self.mode.set(AfterHead);
-                    Done
+                    self.mode.set(InsertionMode::AfterHead);
+                    ProcessResult::Done
                 }
 
                 </body> </html> </br> => else,
 
                 tag @ <template> => {
                     self.insert_element_for(tag);
-                    self.active_formatting.borrow_mut().push(Marker);
+                    self.active_formatting.borrow_mut().push(FormatEntry::Marker);
                     self.frameset_ok.set(false);
-                    self.mode.set(InTemplate);
-                    self.template_modes.borrow_mut().push(InTemplate);
-                    Done
+                    self.mode.set(InsertionMode::InTemplate);
+                    self.template_modes.borrow_mut().push(InsertionMode::InTemplate);
+                    ProcessResult::Done
                 }
 
                 tag @ </template> => {
@@ -164,7 +164,7 @@ where
                         self.template_modes.borrow_mut().pop();
                         self.mode.set(self.reset_insertion_mode());
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 <head> => self.unexpected(&token),
@@ -172,27 +172,27 @@ where
 
                 token => {
                     self.pop();
-                    Reprocess(AfterHead, token)
+                    ProcessResult::Reprocess(InsertionMode::AfterHead, token)
                 }
             }),
 
             //§ parsing-main-inheadnoscript
-            InHeadNoscript => match_token!(token {
-                <html> => self.step(InBody, token),
+            InsertionMode::InHeadNoscript => match_token!(token {
+                <html> => self.step(InsertionMode::InBody, token),
 
                 </noscript> => {
                     self.pop();
-                    self.mode.set(InHead);
-                    Done
+                    self.mode.set(InsertionMode::InHead);
+                    ProcessResult::Done
                 },
 
-                CharacterTokens(NotSplit, text) => SplitWhitespace(text),
-                CharacterTokens(Whitespace, _) => self.step(InHead, token),
+                Token::CharacterTokens(SplitStatus::NotSplit, text) => ProcessResult::SplitWhitespace(text),
+                Token::CharacterTokens(SplitStatus::Whitespace, _) => self.step(InsertionMode::InHead, token),
 
-                CommentToken(_) => self.step(InHead, token),
+                Token::CommentToken(_) => self.step(InsertionMode::InHead, token),
 
                 <basefont> <bgsound> <link> <meta> <noframes> <style>
-                    => self.step(InHead, token),
+                    => self.step(InsertionMode::InHead, token),
 
                 </br> => else,
 
@@ -202,29 +202,29 @@ where
                 token => {
                     self.unexpected(&token);
                     self.pop();
-                    Reprocess(InHead, token)
+                    ProcessResult::Reprocess(InsertionMode::InHead, token)
                 },
             }),
 
             //§ the-after-head-insertion-mode
-            AfterHead => match_token!(token {
-                CharacterTokens(NotSplit, text) => SplitWhitespace(text),
-                CharacterTokens(Whitespace, text) => self.append_text(text),
-                CommentToken(text) => self.append_comment(text),
+            InsertionMode::AfterHead => match_token!(token {
+                Token::CharacterTokens(SplitStatus::NotSplit, text) => ProcessResult::SplitWhitespace(text),
+                Token::CharacterTokens(SplitStatus::Whitespace, text) => self.append_text(text),
+                Token::CommentToken(text) => self.append_comment(text),
 
-                <html> => self.step(InBody, token),
+                <html> => self.step(InsertionMode::InBody, token),
 
                 tag @ <body> => {
                     self.insert_element_for(tag);
                     self.frameset_ok.set(false);
-                    self.mode.set(InBody);
-                    Done
+                    self.mode.set(InsertionMode::InBody);
+                    ProcessResult::Done
                 }
 
                 tag @ <frameset> => {
                     self.insert_element_for(tag);
-                    self.mode.set(InFrameset);
-                    Done
+                    self.mode.set(InsertionMode::InFrameset);
+                    ProcessResult::Done
                 }
 
                 <base> <basefont> <bgsound> <link> <meta>
@@ -232,12 +232,12 @@ where
                     self.unexpected(&token);
                     let head = self.head_elem.borrow().as_ref().expect("no head element").clone();
                     self.push(&head);
-                    let result = self.step(InHead, token);
+                    let result = self.step(InsertionMode::InHead, token);
                     self.remove_from_stack(&head);
                     result
                 }
 
-                </template> => self.step(InHead, token),
+                </template> => self.step(InsertionMode::InHead, token),
 
                 </body> </html> </br> => else,
 
@@ -246,15 +246,15 @@ where
 
                 token => {
                     self.insert_phantom(local_name!("body"));
-                    Reprocess(InBody, token)
+                    ProcessResult::Reprocess(InsertionMode::InBody, token)
                 }
             }),
 
             //§ parsing-main-inbody
-            InBody => match_token!(token {
-                NullCharacterToken => self.unexpected(&token),
+            InsertionMode::InBody => match_token!(token {
+                Token::NullCharacterToken => self.unexpected(&token),
 
-                CharacterTokens(_, text) => {
+                Token::CharacterTokens(_, text) => {
                     self.reconstruct_formatting();
                     if any_not_whitespace(&text) {
                         self.frameset_ok.set(false);
@@ -262,7 +262,7 @@ where
                     self.append_text(text)
                 }
 
-                CommentToken(text) => self.append_comment(text),
+                Token::CommentToken(text) => self.append_comment(text),
 
                 tag @ <html> => {
                     self.unexpected(&tag);
@@ -271,12 +271,12 @@ where
                         let top = html_elem(&open_elems);
                         self.sink.add_attrs_if_missing(top, tag.attrs);
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 <base> <basefont> <bgsound> <link> <meta> <noframes>
                   <script> <style> <template> <title> </template> => {
-                    self.step(InHead, token)
+                    self.step(InsertionMode::InHead, token)
                 }
 
                 tag @ <body> => {
@@ -290,27 +290,27 @@ where
                         },
                         _ => {}
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <frameset> => {
                     self.unexpected(&tag);
-                    if !self.frameset_ok.get() { return Done; }
+                    if !self.frameset_ok.get() { return ProcessResult::Done; }
 
-                    let body = unwrap_or_return!(self.body_elem(), Done).clone();
+                    let body = unwrap_or_return!(self.body_elem(), ProcessResult::Done).clone();
                     self.sink.remove_from_parent(&body);
 
                     // FIXME: can we get here in the fragment case?
                     // What to do with the first element then?
                     self.open_elems.borrow_mut().truncate(1);
                     self.insert_element_for(tag);
-                    self.mode.set(InFrameset);
-                    Done
+                    self.mode.set(InsertionMode::InFrameset);
+                    ProcessResult::Done
                 }
 
-                EOFToken => {
+                Token::EOFToken => {
                     if !self.template_modes.borrow().is_empty() {
-                        self.step(InTemplate, token)
+                        self.step(InsertionMode::InTemplate, token)
                     } else {
                         self.check_body_end();
                         self.stop_parsing()
@@ -320,20 +320,20 @@ where
                 </body> => {
                     if self.in_scope_named(default_scope, local_name!("body")) {
                         self.check_body_end();
-                        self.mode.set(AfterBody);
+                        self.mode.set(InsertionMode::AfterBody);
                     } else {
                         self.sink.parse_error(Borrowed("</body> with no <body> in scope"));
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 </html> => {
                     if self.in_scope_named(default_scope, local_name!("body")) {
                         self.check_body_end();
-                        Reprocess(AfterBody, token)
+                        ProcessResult::Reprocess(InsertionMode::AfterBody, token)
                     } else {
                         self.sink.parse_error(Borrowed("</html> with no <body> in scope"));
-                        Done
+                        ProcessResult::Done
                     }
                 }
 
@@ -342,13 +342,13 @@ where
                   <hgroup> <main> <nav> <ol> <p> <search> <section> <summary> <ul> => {
                     self.close_p_element_in_button_scope();
                     self.insert_element_for(tag);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <menu> => {
                     self.close_p_element_in_button_scope();
                     self.insert_element_for(tag);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <h1> <h2> <h3> <h4> <h5> <h6> => {
@@ -358,7 +358,7 @@ where
                         self.pop();
                     }
                     self.insert_element_for(tag);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <pre> <listing> => {
@@ -366,7 +366,7 @@ where
                     self.insert_element_for(tag);
                     self.ignore_lf.set(true);
                     self.frameset_ok.set(false);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <form> => {
@@ -380,7 +380,7 @@ where
                             *self.form_elem.borrow_mut() = Some(elem);
                         }
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <li> <dd> <dt> => {
@@ -422,13 +422,13 @@ where
 
                     self.close_p_element_in_button_scope();
                     self.insert_element_for(tag);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <plaintext> => {
                     self.close_p_element_in_button_scope();
                     self.insert_element_for(tag);
-                    ToPlaintext
+                    ProcessResult::ToPlaintext
                 }
 
                 tag @ <button> => {
@@ -440,7 +440,7 @@ where
                     self.reconstruct_formatting();
                     self.insert_element_for(tag);
                     self.frameset_ok.set(false);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ </address> </article> </aside> </blockquote> </button> </center>
@@ -453,7 +453,7 @@ where
                         self.generate_implied_end(cursory_implied_end);
                         self.expect_to_close(tag.name);
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 </form> => {
@@ -462,13 +462,13 @@ where
                         let node = match self.form_elem.take() {
                             None => {
                                 self.sink.parse_error(Borrowed("Null form element pointer on </form>"));
-                                return Done;
+                                return ProcessResult::Done;
                             }
                             Some(x) => x,
                         };
                         if !self.in_scope(default_scope, |n| self.sink.same_node(&node, &n)) {
                             self.sink.parse_error(Borrowed("Form element not in scope on </form>"));
-                            return Done;
+                            return ProcessResult::Done;
                         }
                         self.generate_implied_end(cursory_implied_end);
                         let current = self.current_node().clone();
@@ -479,7 +479,7 @@ where
                     } else {
                         if !self.in_scope_named(default_scope, local_name!("form")) {
                             self.sink.parse_error(Borrowed("Form element not in scope on </form>"));
-                            return Done;
+                            return ProcessResult::Done;
                         }
                         self.generate_implied_end(cursory_implied_end);
                         if !self.current_node_named(local_name!("form")) {
@@ -487,7 +487,7 @@ where
                         }
                         self.pop_until_named(local_name!("form"));
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 </p> => {
@@ -496,7 +496,7 @@ where
                         self.insert_phantom(local_name!("p"));
                     }
                     self.close_p_element();
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ </li> </dd> </dt> => {
@@ -511,7 +511,7 @@ where
                     } else {
                         self.sink.parse_error(Borrowed("No matching tag to close"));
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ </h1> </h2> </h3> </h4> </h5> </h6> => {
@@ -524,20 +524,20 @@ where
                     } else {
                         self.sink.parse_error(Borrowed("No heading tag to close"));
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <a> => {
                     self.handle_misnested_a_tags(&tag);
                     self.reconstruct_formatting();
                     self.create_formatting_element_for(tag);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <b> <big> <code> <em> <font> <i> <s> <small> <strike> <strong> <tt> <u> => {
                     self.reconstruct_formatting();
                     self.create_formatting_element_for(tag);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <nobr> => {
@@ -548,21 +548,21 @@ where
                         self.reconstruct_formatting();
                     }
                     self.create_formatting_element_for(tag);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ </a> </b> </big> </code> </em> </font> </i> </nobr>
                   </s> </small> </strike> </strong> </tt> </u> => {
                     self.adoption_agency(tag.name);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <applet> <marquee> <object> => {
                     self.reconstruct_formatting();
                     self.insert_element_for(tag);
-                    self.active_formatting.borrow_mut().push(Marker);
+                    self.active_formatting.borrow_mut().push(FormatEntry::Marker);
                     self.frameset_ok.set(false);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ </applet> </marquee> </object> => {
@@ -573,7 +573,7 @@ where
                         self.expect_to_close(tag.name);
                         self.clear_active_formatting_to_marker();
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <table> => {
@@ -582,13 +582,13 @@ where
                     }
                     self.insert_element_for(tag);
                     self.frameset_ok.set(false);
-                    self.mode.set(InTable);
-                    Done
+                    self.mode.set(InsertionMode::InTable);
+                    ProcessResult::Done
                 }
 
                 tag @ </br> => {
                     self.unexpected(&tag);
-                    self.step(InBody, TagToken(Tag {
+                    self.step(InsertionMode::InBody, Token::TagToken(Tag {
                         kind: StartTag,
                         attrs: vec!(),
                         ..tag
@@ -605,24 +605,24 @@ where
                     if !keep_frameset_ok {
                         self.frameset_ok.set(false);
                     }
-                    DoneAckSelfClosing
+                    ProcessResult::DoneAckSelfClosing
                 }
 
                 tag @ <param> <source> <track> => {
                     self.insert_and_pop_element_for(tag);
-                    DoneAckSelfClosing
+                    ProcessResult::DoneAckSelfClosing
                 }
 
                 tag @ <hr> => {
                     self.close_p_element_in_button_scope();
                     self.insert_and_pop_element_for(tag);
                     self.frameset_ok.set(false);
-                    DoneAckSelfClosing
+                    ProcessResult::DoneAckSelfClosing
                 }
 
                 tag @ <image> => {
                     self.unexpected(&tag);
-                    self.step(InBody, TagToken(Tag {
+                    self.step(InsertionMode::InBody, Token::TagToken(Tag {
                         name: local_name!("img"),
                         ..tag
                     }))
@@ -659,11 +659,14 @@ where
                     // NB: mode == InBody but possibly self.mode != mode, if
                     // we're processing "as in the rules for InBody".
                     self.mode.set(match self.mode.get() {
-                        InTable | InCaption | InTableBody
-                            | InRow | InCell => InSelectInTable,
-                        _ => InSelect,
+                        InsertionMode::InTable 
+                            | InsertionMode::InCaption 
+                            | InsertionMode::InTableBody
+                            | InsertionMode::InRow 
+                            | InsertionMode::InCell => InsertionMode::InSelectInTable,
+                        _ => InsertionMode::InSelect,
                     });
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <optgroup> <option> => {
@@ -672,7 +675,7 @@ where
                     }
                     self.reconstruct_formatting();
                     self.insert_element_for(tag);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <rb> <rtc> => {
@@ -683,7 +686,7 @@ where
                         self.unexpected(&tag);
                     }
                     self.insert_element_for(tag);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <rp> <rt> => {
@@ -694,7 +697,7 @@ where
                         self.unexpected(&tag);
                     }
                     self.insert_element_for(tag);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <math> => self.enter_foreign(tag, ns!(mathml)),
@@ -704,7 +707,7 @@ where
                 <caption> <col> <colgroup> <frame> <head>
                   <tbody> <td> <tfoot> <th> <thead> <tr> => {
                     self.unexpected(&token);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <_> => {
@@ -713,13 +716,13 @@ where
                     } else {
                         self.reconstruct_formatting();
                         self.insert_element_for(tag);
-                        Done
+                        ProcessResult::Done
                     }
                 }
 
                 tag @ </_> => {
                     self.process_end_tag_in_body(tag);
-                    Done
+                    ProcessResult::Done
                 }
 
                 // FIXME: This should be unreachable, but match_token requires a
@@ -728,10 +731,10 @@ where
             }),
 
             //§ parsing-main-incdata
-            Text => match_token!(token {
-                CharacterTokens(_, text) => self.append_text(text),
+            InsertionMode::Text => match_token!(token {
+                Token::CharacterTokens(_, text) => self.append_text(text),
 
-                EOFToken => {
+                Token::EOFToken => {
                     self.unexpected(&token);
                     if self.current_node_named(local_name!("script")) {
                         let open_elems = self.open_elems.borrow();
@@ -739,16 +742,16 @@ where
                         self.sink.mark_script_already_started(current);
                     }
                     self.pop();
-                    Reprocess(self.orig_mode.take().unwrap(), token)
+                    ProcessResult::Reprocess(self.orig_mode.take().unwrap(), token)
                 }
 
                 tag @ </_> => {
                     let node = self.pop();
                     self.mode.set(self.orig_mode.take().unwrap());
                     if tag.name == local_name!("script") {
-                        return Script(node);
+                        return ProcessResult::Script(node);
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 // The spec doesn't say what to do here.
@@ -757,55 +760,55 @@ where
             }),
 
             //§ parsing-main-intable
-            InTable => match_token!(token {
+            InsertionMode::InTable => match_token!(token {
                 // FIXME: hack, should implement pat | pat for match_token instead
-                NullCharacterToken => self.process_chars_in_table(token),
+                Token::NullCharacterToken => self.process_chars_in_table(token),
 
-                CharacterTokens(..) => self.process_chars_in_table(token),
+                Token::CharacterTokens(..) => self.process_chars_in_table(token),
 
-                CommentToken(text) => self.append_comment(text),
+                Token::CommentToken(text) => self.append_comment(text),
 
                 tag @ <caption> => {
                     self.pop_until_current(table_scope);
-                    self.active_formatting.borrow_mut().push(Marker);
+                    self.active_formatting.borrow_mut().push(FormatEntry::Marker);
                     self.insert_element_for(tag);
-                    self.mode.set(InCaption);
-                    Done
+                    self.mode.set(InsertionMode::InCaption);
+                    ProcessResult::Done
                 }
 
                 tag @ <colgroup> => {
                     self.pop_until_current(table_scope);
                     self.insert_element_for(tag);
-                    self.mode.set(InColumnGroup);
-                    Done
+                    self.mode.set(InsertionMode::InColumnGroup);
+                    ProcessResult::Done
                 }
 
                 <col> => {
                     self.pop_until_current(table_scope);
                     self.insert_phantom(local_name!("colgroup"));
-                    Reprocess(InColumnGroup, token)
+                    ProcessResult::Reprocess(InsertionMode::InColumnGroup, token)
                 }
 
                 tag @ <tbody> <tfoot> <thead> => {
                     self.pop_until_current(table_scope);
                     self.insert_element_for(tag);
-                    self.mode.set(InTableBody);
-                    Done
+                    self.mode.set(InsertionMode::InTableBody);
+                    ProcessResult::Done
                 }
 
                 <td> <th> <tr> => {
                     self.pop_until_current(table_scope);
                     self.insert_phantom(local_name!("tbody"));
-                    Reprocess(InTableBody, token)
+                    ProcessResult::Reprocess(InsertionMode::InTableBody, token)
                 }
 
                 <table> => {
                     self.unexpected(&token);
                     if self.in_scope_named(table_scope, local_name!("table")) {
                         self.pop_until_named(local_name!("table"));
-                        Reprocess(self.reset_insertion_mode(), token)
+                        ProcessResult::Reprocess(self.reset_insertion_mode(), token)
                     } else {
-                        Done
+                        ProcessResult::Done
                     }
                 }
 
@@ -816,7 +819,7 @@ where
                     } else {
                         self.unexpected(&token);
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 </body> </caption> </col> </colgroup> </html>
@@ -824,15 +827,15 @@ where
                     self.unexpected(&token),
 
                 <style> <script> <template> </template>
-                    => self.step(InHead, token),
+                    => self.step(InsertionMode::InHead, token),
 
                 tag @ <input> => {
                     self.unexpected(&tag);
                     if self.is_type_hidden(&tag) {
                         self.insert_and_pop_element_for(tag);
-                        DoneAckSelfClosing
+                        ProcessResult::DoneAckSelfClosing
                     } else {
-                        self.foster_parent_in_body(TagToken(tag))
+                        self.foster_parent_in_body(Token::TagToken(tag))
                     }
                 }
 
@@ -841,10 +844,10 @@ where
                     if !self.in_html_elem_named(local_name!("template")) && self.form_elem.borrow().is_none() {
                         *self.form_elem.borrow_mut() = Some(self.insert_and_pop_element_for(tag));
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
-                EOFToken => self.step(InBody, token),
+                Token::EOFToken => self.step(InsertionMode::InBody, token),
 
                 token => {
                     self.unexpected(&token);
@@ -853,29 +856,29 @@ where
             }),
 
             //§ parsing-main-intabletext
-            InTableText => match_token!(token {
-                NullCharacterToken => self.unexpected(&token),
+            InsertionMode::InTableText => match_token!(token {
+                Token::NullCharacterToken => self.unexpected(&token),
 
-                CharacterTokens(split, text) => {
+                Token::CharacterTokens(split, text) => {
                     self.pending_table_text.borrow_mut().push((split, text));
-                    Done
+                    ProcessResult::Done
                 }
 
                 token => {
                     let pending = self.pending_table_text.take();
                     let contains_nonspace = pending.iter().any(|&(split, ref text)| {
                         match split {
-                            Whitespace => false,
-                            NotWhitespace => true,
-                            NotSplit => any_not_whitespace(text),
+                            SplitStatus::Whitespace => false,
+                            SplitStatus::NotWhitespace => true,
+                            SplitStatus::NotSplit => any_not_whitespace(text),
                         }
                     });
 
                     if contains_nonspace {
                         self.sink.parse_error(Borrowed("Non-space table text"));
                         for (split, text) in pending.into_iter() {
-                            match self.foster_parent_in_body(CharacterTokens(split, text)) {
-                                Done => (),
+                            match self.foster_parent_in_body(Token::CharacterTokens(split, text)) {
+                                ProcessResult::Done => (),
                                 _ => panic!("not prepared to handle this!"),
                             }
                         }
@@ -885,12 +888,12 @@ where
                         }
                     }
 
-                    Reprocess(self.orig_mode.take().unwrap(), token)
+                    ProcessResult::Reprocess(self.orig_mode.take().unwrap(), token)
                 }
             }),
 
             //§ parsing-main-incaption
-            InCaption => match_token!(token {
+            InsertionMode::InCaption => match_token!(token {
                 tag @ <caption> <col> <colgroup> <tbody> <td> <tfoot>
                   <th> <thead> <tr> </table> </caption> => {
                     if self.in_scope_named(table_scope, local_name!("caption")) {
@@ -899,56 +902,56 @@ where
                         self.clear_active_formatting_to_marker();
                         match tag {
                             Tag { kind: EndTag, name: local_name!("caption"), .. } => {
-                                self.mode.set(InTable);
-                                Done
+                                self.mode.set(InsertionMode::InTable);
+                                ProcessResult::Done
                             }
-                            _ => Reprocess(InTable, TagToken(tag))
+                            _ => ProcessResult::Reprocess(InsertionMode::InTable, Token::TagToken(tag))
                         }
                     } else {
                         self.unexpected(&tag);
-                        Done
+                        ProcessResult::Done
                     }
                 }
 
                 </body> </col> </colgroup> </html> </tbody>
                   </td> </tfoot> </th> </thead> </tr> => self.unexpected(&token),
 
-                token => self.step(InBody, token),
+                token => self.step(InsertionMode::InBody, token),
             }),
 
             //§ parsing-main-incolgroup
-            InColumnGroup => match_token!(token {
-                CharacterTokens(NotSplit, text) => SplitWhitespace(text),
-                CharacterTokens(Whitespace, text) => self.append_text(text),
-                CommentToken(text) => self.append_comment(text),
+            InsertionMode::InColumnGroup => match_token!(token {
+                Token::CharacterTokens(SplitStatus::NotSplit, text) => ProcessResult::SplitWhitespace(text),
+                Token::CharacterTokens(SplitStatus::Whitespace, text) => self.append_text(text),
+                Token::CommentToken(text) => self.append_comment(text),
 
-                <html> => self.step(InBody, token),
+                <html> => self.step(InsertionMode::InBody, token),
 
                 tag @ <col> => {
                     self.insert_and_pop_element_for(tag);
-                    DoneAckSelfClosing
+                    ProcessResult::DoneAckSelfClosing
                 }
 
                 </colgroup> => {
                     if self.current_node_named(local_name!("colgroup")) {
                         self.pop();
-                        self.mode.set(InTable);
+                        self.mode.set(InsertionMode::InTable);
                     } else {
                         self.unexpected(&token);
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 </col> => self.unexpected(&token),
 
-                <template> </template> => self.step(InHead, token),
+                <template> </template> => self.step(InsertionMode::InHead, token),
 
-                EOFToken => self.step(InBody, token),
+                Token::EOFToken => self.step(InsertionMode::InBody, token),
 
                 token => {
                     if self.current_node_named(local_name!("colgroup")) {
                         self.pop();
-                        Reprocess(InTable, token)
+                        ProcessResult::Reprocess(InsertionMode::InTable, token)
                     } else {
                         self.unexpected(&token)
                     }
@@ -956,30 +959,30 @@ where
             }),
 
             //§ parsing-main-intbody
-            InTableBody => match_token!(token {
+            InsertionMode::InTableBody => match_token!(token {
                 tag @ <tr> => {
                     self.pop_until_current(table_body_context);
                     self.insert_element_for(tag);
-                    self.mode.set(InRow);
-                    Done
+                    self.mode.set(InsertionMode::InRow);
+                    ProcessResult::Done
                 }
 
                 <th> <td> => {
                     self.unexpected(&token);
                     self.pop_until_current(table_body_context);
                     self.insert_phantom(local_name!("tr"));
-                    Reprocess(InRow, token)
+                    ProcessResult::Reprocess(InsertionMode::InRow, token)
                 }
 
                 tag @ </tbody> </tfoot> </thead> => {
                     if self.in_scope_named(table_scope, tag.name.clone()) {
                         self.pop_until_current(table_body_context);
                         self.pop();
-                        self.mode.set(InTable);
+                        self.mode.set(InsertionMode::InTable);
                     } else {
                         self.unexpected(&tag);
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 <caption> <col> <colgroup> <tbody> <tfoot> <thead> </table> => {
@@ -987,7 +990,7 @@ where
                     if self.in_scope(table_scope, |e| self.elem_in(&e, table_outer)) {
                         self.pop_until_current(table_body_context);
                         self.pop();
-                        Reprocess(InTable, token)
+                        ProcessResult::Reprocess(InsertionMode::InTable, token)
                     } else {
                         self.unexpected(&token)
                     }
@@ -996,17 +999,17 @@ where
                 </body> </caption> </col> </colgroup> </html> </td> </th> </tr>
                     => self.unexpected(&token),
 
-                token => self.step(InTable, token),
+                token => self.step(InsertionMode::InTable, token),
             }),
 
             //§ parsing-main-intr
-            InRow => match_token!(token {
+            InsertionMode::InRow => match_token!(token {
                 tag @ <th> <td> => {
                     self.pop_until_current(table_row_context);
                     self.insert_element_for(tag);
-                    self.mode.set(InCell);
-                    self.active_formatting.borrow_mut().push(Marker);
-                    Done
+                    self.mode.set(InsertionMode::InCell);
+                    self.active_formatting.borrow_mut().push(FormatEntry::Marker);
+                    ProcessResult::Done
                 }
 
                 </tr> => {
@@ -1014,11 +1017,11 @@ where
                         self.pop_until_current(table_row_context);
                         let node = self.pop();
                         self.assert_named(&node, local_name!("tr"));
-                        self.mode.set(InTableBody);
+                        self.mode.set(InsertionMode::InTableBody);
                     } else {
                         self.unexpected(&token);
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 <caption> <col> <colgroup> <tbody> <tfoot> <thead> <tr> </table> => {
@@ -1026,7 +1029,7 @@ where
                         self.pop_until_current(table_row_context);
                         let node = self.pop();
                         self.assert_named(&node, local_name!("tr"));
-                        Reprocess(InTableBody, token)
+                        ProcessResult::Reprocess(InsertionMode::InTableBody, token)
                     } else {
                         self.unexpected(&token)
                     }
@@ -1038,9 +1041,9 @@ where
                             self.pop_until_current(table_row_context);
                             let node = self.pop();
                             self.assert_named(&node, local_name!("tr"));
-                            Reprocess(InTableBody, TagToken(tag))
+                            ProcessResult::Reprocess(InsertionMode::InTableBody, Token::TagToken(tag))
                         } else {
-                            Done
+                            ProcessResult::Done
                         }
                     } else {
                         self.unexpected(&tag)
@@ -1050,27 +1053,27 @@ where
                 </body> </caption> </col> </colgroup> </html> </td> </th>
                     => self.unexpected(&token),
 
-                token => self.step(InTable, token),
+                token => self.step(InsertionMode::InTable, token),
             }),
 
             //§ parsing-main-intd
-            InCell => match_token!(token {
+            InsertionMode::InCell => match_token!(token {
                 tag @ </td> </th> => {
                     if self.in_scope_named(table_scope, tag.name.clone()) {
                         self.generate_implied_end(cursory_implied_end);
                         self.expect_to_close(tag.name);
                         self.clear_active_formatting_to_marker();
-                        self.mode.set(InRow);
+                        self.mode.set(InsertionMode::InRow);
                     } else {
                         self.unexpected(&tag);
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 <caption> <col> <colgroup> <tbody> <td> <tfoot> <th> <thead> <tr> => {
                     if self.in_scope(table_scope, |n| self.elem_in(&n, td_th)) {
                         self.close_the_cell();
-                        Reprocess(InRow, token)
+                        ProcessResult::Reprocess(InsertionMode::InRow, token)
                     } else {
                         self.unexpected(&token)
                     }
@@ -1082,29 +1085,29 @@ where
                 tag @ </table> </tbody> </tfoot> </thead> </tr> => {
                     if self.in_scope_named(table_scope, tag.name.clone()) {
                         self.close_the_cell();
-                        Reprocess(InRow, TagToken(tag))
+                        ProcessResult::Reprocess(InsertionMode::InRow, Token::TagToken(tag))
                     } else {
                         self.unexpected(&tag)
                     }
                 }
 
-                token => self.step(InBody, token),
+                token => self.step(InsertionMode::InBody, token),
             }),
 
             //§ parsing-main-inselect
-            InSelect => match_token!(token {
-                NullCharacterToken => self.unexpected(&token),
-                CharacterTokens(_, text) => self.append_text(text),
-                CommentToken(text) => self.append_comment(text),
+            InsertionMode::InSelect => match_token!(token {
+                Token::NullCharacterToken => self.unexpected(&token),
+                Token::CharacterTokens(_, text) => self.append_text(text),
+                Token::CommentToken(text) => self.append_comment(text),
 
-                <html> => self.step(InBody, token),
+                <html> => self.step(InsertionMode::InBody, token),
 
                 tag @ <option> => {
                     if self.current_node_named(local_name!("option")) {
                         self.pop();
                     }
                     self.insert_element_for(tag);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <optgroup> => {
@@ -1115,7 +1118,7 @@ where
                         self.pop();
                     }
                     self.insert_element_for(tag);
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <hr> => {
@@ -1127,7 +1130,7 @@ where
                     }
                     self.insert_element_for(tag);
                     self.pop();
-                    DoneAckSelfClosing
+                    ProcessResult::DoneAckSelfClosing
                 }
 
                 </optgroup> => {
@@ -1142,7 +1145,7 @@ where
                     } else {
                         self.unexpected(&token);
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 </option> => {
@@ -1151,7 +1154,7 @@ where
                     } else {
                         self.unexpected(&token);
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <select> </select> => {
@@ -1165,82 +1168,82 @@ where
                         self.pop_until_named(local_name!("select"));
                         self.mode.set(self.reset_insertion_mode());
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 <input> <keygen> <textarea> => {
                     self.unexpected(&token);
                     if self.in_scope_named(select_scope, local_name!("select")) {
                         self.pop_until_named(local_name!("select"));
-                        Reprocess(self.reset_insertion_mode(), token)
+                        ProcessResult::Reprocess(self.reset_insertion_mode(), token)
                     } else {
-                        Done
+                        ProcessResult::Done
                     }
                 }
 
-                <script> <template> </template> => self.step(InHead, token),
+                <script> <template> </template> => self.step(InsertionMode::InHead, token),
 
-                EOFToken => self.step(InBody, token),
+                Token::EOFToken => self.step(InsertionMode::InBody, token),
 
                 token => self.unexpected(&token),
             }),
 
             //§ parsing-main-inselectintable
-            InSelectInTable => match_token!(token {
+            InsertionMode::InSelectInTable => match_token!(token {
                 <caption> <table> <tbody> <tfoot> <thead> <tr> <td> <th> => {
                     self.unexpected(&token);
                     self.pop_until_named(local_name!("select"));
-                    Reprocess(self.reset_insertion_mode(), token)
+                    ProcessResult::Reprocess(self.reset_insertion_mode(), token)
                 }
 
                 tag @ </caption> </table> </tbody> </tfoot> </thead> </tr> </td> </th> => {
                     self.unexpected(&tag);
                     if self.in_scope_named(table_scope, tag.name.clone()) {
                         self.pop_until_named(local_name!("select"));
-                        Reprocess(self.reset_insertion_mode(), TagToken(tag))
+                        ProcessResult::Reprocess(self.reset_insertion_mode(), Token::TagToken(tag))
                     } else {
-                        Done
+                        ProcessResult::Done
                     }
                 }
 
-                token => self.step(InSelect, token),
+                token => self.step(InsertionMode::InSelect, token),
             }),
 
             //§ parsing-main-intemplate
-            InTemplate => match_token!(token {
-                CharacterTokens(_, _) => self.step(InBody, token),
-                CommentToken(_) => self.step(InBody, token),
+            InsertionMode::InTemplate => match_token!(token {
+                Token::CharacterTokens(_, _) => self.step(InsertionMode::InBody, token),
+                Token::CommentToken(_) => self.step(InsertionMode::InBody, token),
 
                 <base> <basefont> <bgsound> <link> <meta> <noframes> <script>
                 <style> <template> <title> </template> => {
-                    self.step(InHead, token)
+                    self.step(InsertionMode::InHead, token)
                 }
 
                 <caption> <colgroup> <tbody> <tfoot> <thead> => {
                     self.template_modes.borrow_mut().pop();
-                    self.template_modes.borrow_mut().push(InTable);
-                    Reprocess(InTable, token)
+                    self.template_modes.borrow_mut().push(InsertionMode::InTable);
+                    ProcessResult::Reprocess(InsertionMode::InTable, token)
                 }
 
                 <col> => {
                     self.template_modes.borrow_mut().pop();
-                    self.template_modes.borrow_mut().push(InColumnGroup);
-                    Reprocess(InColumnGroup, token)
+                    self.template_modes.borrow_mut().push(InsertionMode::InColumnGroup);
+                    ProcessResult::Reprocess(InsertionMode::InColumnGroup, token)
                 }
 
                 <tr> => {
                     self.template_modes.borrow_mut().pop();
-                    self.template_modes.borrow_mut().push(InTableBody);
-                    Reprocess(InTableBody, token)
+                    self.template_modes.borrow_mut().push(InsertionMode::InTableBody);
+                    ProcessResult::Reprocess(InsertionMode::InTableBody, token)
                 }
 
                 <td> <th> => {
                     self.template_modes.borrow_mut().pop();
-                    self.template_modes.borrow_mut().push(InRow);
-                    Reprocess(InRow, token)
+                    self.template_modes.borrow_mut().push(InsertionMode::InRow);
+                    ProcessResult::Reprocess(InsertionMode::InRow, token)
                 }
 
-                EOFToken => {
+                Token::EOFToken => {
                     if !self.in_html_elem_named(local_name!("template")) {
                         self.stop_parsing()
                     } else {
@@ -1249,55 +1252,55 @@ where
                         self.clear_active_formatting_to_marker();
                         self.template_modes.borrow_mut().pop();
                         self.mode.set(self.reset_insertion_mode());
-                        Reprocess(self.reset_insertion_mode(), token)
+                        ProcessResult::Reprocess(self.reset_insertion_mode(), token)
                     }
                 }
 
                 tag @ <_> => {
                     self.template_modes.borrow_mut().pop();
-                    self.template_modes.borrow_mut().push(InBody);
-                    Reprocess(InBody, TagToken(tag))
+                    self.template_modes.borrow_mut().push(InsertionMode::InBody);
+                    ProcessResult::Reprocess(InsertionMode::InBody, Token::TagToken(tag))
                 }
 
                 token => self.unexpected(&token),
             }),
 
             //§ parsing-main-afterbody
-            AfterBody => match_token!(token {
-                CharacterTokens(NotSplit, text) => SplitWhitespace(text),
-                CharacterTokens(Whitespace, _) => self.step(InBody, token),
-                CommentToken(text) => self.append_comment_to_html(text),
+            InsertionMode::AfterBody => match_token!(token {
+                Token::CharacterTokens(SplitStatus::NotSplit, text) => ProcessResult::SplitWhitespace(text),
+                Token::CharacterTokens(SplitStatus::Whitespace, _) => self.step(InsertionMode::InBody, token),
+                Token::CommentToken(text) => self.append_comment_to_html(text),
 
-                <html> => self.step(InBody, token),
+                <html> => self.step(InsertionMode::InBody, token),
 
                 </html> => {
                     if self.is_fragment() {
                         self.unexpected(&token);
                     } else {
-                        self.mode.set(AfterAfterBody);
+                        self.mode.set(InsertionMode::AfterAfterBody);
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
-                EOFToken => self.stop_parsing(),
+                Token::EOFToken => self.stop_parsing(),
 
                 token => {
                     self.unexpected(&token);
-                    Reprocess(InBody, token)
+                    ProcessResult::Reprocess(InsertionMode::InBody, token)
                 }
             }),
 
             //§ parsing-main-inframeset
-            InFrameset => match_token!(token {
-                CharacterTokens(NotSplit, text) => SplitWhitespace(text),
-                CharacterTokens(Whitespace, text) => self.append_text(text),
-                CommentToken(text) => self.append_comment(text),
+            InsertionMode::InFrameset => match_token!(token {
+                Token::CharacterTokens(SplitStatus::NotSplit, text) => ProcessResult::SplitWhitespace(text),
+                Token::CharacterTokens(SplitStatus::Whitespace, text) => self.append_text(text),
+                Token::CommentToken(text) => self.append_comment(text),
 
-                <html> => self.step(InBody, token),
+                <html> => self.step(InsertionMode::InBody, token),
 
                 tag @ <frameset> => {
                     self.insert_element_for(tag);
-                    Done
+                    ProcessResult::Done
                 }
 
                 </frameset> => {
@@ -1306,20 +1309,20 @@ where
                     } else {
                         self.pop();
                         if !self.is_fragment() && !self.current_node_named(local_name!("frameset")) {
-                            self.mode.set(AfterFrameset);
+                            self.mode.set(InsertionMode::AfterFrameset);
                         }
                     }
-                    Done
+                    ProcessResult::Done
                 }
 
                 tag @ <frame> => {
                     self.insert_and_pop_element_for(tag);
-                    DoneAckSelfClosing
+                    ProcessResult::DoneAckSelfClosing
                 }
 
-                <noframes> => self.step(InHead, token),
+                <noframes> => self.step(InsertionMode::InHead, token),
 
-                EOFToken => {
+                Token::EOFToken => {
                     if self.open_elems.borrow().len() != 1 {
                         self.unexpected(&token);
                     }
@@ -1330,52 +1333,52 @@ where
             }),
 
             //§ parsing-main-afterframeset
-            AfterFrameset => match_token!(token {
-                CharacterTokens(NotSplit, text) => SplitWhitespace(text),
-                CharacterTokens(Whitespace, text) => self.append_text(text),
-                CommentToken(text) => self.append_comment(text),
+            InsertionMode::AfterFrameset => match_token!(token {
+                Token::CharacterTokens(SplitStatus::NotSplit, text) => ProcessResult::SplitWhitespace(text),
+                Token::CharacterTokens(SplitStatus::Whitespace, text) => self.append_text(text),
+                Token::CommentToken(text) => self.append_comment(text),
 
-                <html> => self.step(InBody, token),
+                <html> => self.step(InsertionMode::InBody, token),
 
                 </html> => {
-                    self.mode.set(AfterAfterFrameset);
-                    Done
+                    self.mode.set(InsertionMode::AfterAfterFrameset);
+                    ProcessResult::Done
                 }
 
-                <noframes> => self.step(InHead, token),
+                <noframes> => self.step(InsertionMode::InHead, token),
 
-                EOFToken => self.stop_parsing(),
+                Token::EOFToken => self.stop_parsing(),
 
                 token => self.unexpected(&token),
             }),
 
             //§ the-after-after-body-insertion-mode
-            AfterAfterBody => match_token!(token {
-                CharacterTokens(NotSplit, text) => SplitWhitespace(text),
-                CharacterTokens(Whitespace, _) => self.step(InBody, token),
-                CommentToken(text) => self.append_comment_to_doc(text),
+            InsertionMode::AfterAfterBody => match_token!(token {
+                Token::CharacterTokens(SplitStatus::NotSplit, text) => ProcessResult::SplitWhitespace(text),
+                Token::CharacterTokens(SplitStatus::Whitespace, _) => self.step(InsertionMode::InBody, token),
+                Token::CommentToken(text) => self.append_comment_to_doc(text),
 
-                <html> => self.step(InBody, token),
+                <html> => self.step(InsertionMode::InBody, token),
 
-                EOFToken => self.stop_parsing(),
+                Token::EOFToken => self.stop_parsing(),
 
                 token => {
                     self.unexpected(&token);
-                    Reprocess(InBody, token)
+                    ProcessResult::Reprocess(InsertionMode::InBody, token)
                 }
             }),
 
             //§ the-after-after-frameset-insertion-mode
-            AfterAfterFrameset => match_token!(token {
-                CharacterTokens(NotSplit, text) => SplitWhitespace(text),
-                CharacterTokens(Whitespace, _) => self.step(InBody, token),
-                CommentToken(text) => self.append_comment_to_doc(text),
+            InsertionMode::AfterAfterFrameset => match_token!(token {
+                Token::CharacterTokens(SplitStatus::NotSplit, text) => ProcessResult::SplitWhitespace(text),
+                Token::CharacterTokens(SplitStatus::Whitespace, _) => self.step(InsertionMode::InBody, token),
+                Token::CommentToken(text) => self.append_comment_to_doc(text),
 
-                <html> => self.step(InBody, token),
+                <html> => self.step(InsertionMode::InBody, token),
 
-                EOFToken => self.stop_parsing(),
+                Token::EOFToken => self.stop_parsing(),
 
-                <noframes> => self.step(InHead, token),
+                <noframes> => self.step(InsertionMode::InHead, token),
 
                 token => self.unexpected(&token),
             }),
@@ -1385,19 +1388,19 @@ where
 
     fn step_foreign(&self, token: Token) -> ProcessResult<Handle> {
         match_token!(token {
-            NullCharacterToken => {
+            Token::NullCharacterToken => {
                 self.unexpected(&token);
                 self.append_text("\u{fffd}".to_tendril())
             }
 
-            CharacterTokens(_, text) => {
+            Token::CharacterTokens(_, text) => {
                 if any_not_whitespace(&text) {
                     self.frameset_ok.set(false);
                 }
                 self.append_text(text)
             }
 
-            CommentToken(text) => self.append_comment(text),
+            Token::CommentToken(text) => self.append_comment(text),
 
             tag @ <b> <big> <blockquote> <body> <br> <center> <code> <dd> <div> <dl>
                 <dt> <em> <embed> <h1> <h2> <h3> <h4> <h5> <h6> <head> <hr> <i>
@@ -1428,7 +1431,7 @@ where
                 let mut stack_idx = self.open_elems.borrow().len() - 1;
                 loop {
                     if stack_idx == 0 {
-                        return Done;
+                        return ProcessResult::Done;
                     }
 
                     let html;
@@ -1441,12 +1444,12 @@ where
                     }
                     if !first && html {
                         let mode = self.mode.get();
-                        return self.step(mode, TagToken(tag));
+                        return self.step(mode, Token::TagToken(tag));
                     }
 
                     if eq {
                         self.open_elems.borrow_mut().truncate(stack_idx);
-                        return Done;
+                        return ProcessResult::Done;
                     }
 
                     if first {

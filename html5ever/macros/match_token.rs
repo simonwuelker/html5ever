@@ -71,8 +71,8 @@ tag @ <html> <head> => ...
 expands to something like
 
 ```rust
-TagToken(tag @ Tag { name: local_name!("html"), kind: StartTag })
-| TagToken(tag @ Tag { name: local_name!("head"), kind: StartTag }) => ...
+Token::TagToken(tag @ Tag { name: local_name!("html"), kind: StartTag })
+| Token::TagToken(tag @ Tag { name: local_name!("head"), kind: StartTag }) => ...
 ```
 
 A wildcard tag matches any tag of the appropriate kind, *unless* it was
@@ -453,6 +453,6 @@ fn make_tag_pattern(binding: &TokenStream, tag: Tag) -> TokenStream {
         quote!()
     };
     quote! {
-        crate::tree_builder::types::TagToken(#binding crate::tokenizer::Tag { kind: #kind, #name_field .. })
+        crate::tree_builder::types::Token::TagToken(#binding crate::tokenizer::Tag { kind: #kind, #name_field .. })
     }
 }

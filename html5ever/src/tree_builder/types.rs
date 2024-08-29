@@ -14,13 +14,6 @@ use crate::tokenizer::Tag;
 
 use crate::tendril::StrTendril;
 
-pub use self::FormatEntry::*;
-pub use self::InsertionMode::*;
-pub use self::InsertionPoint::*;
-pub use self::ProcessResult::*;
-pub use self::SplitStatus::*;
-pub use self::Token::*;
-
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub(crate) enum InsertionMode {
     Initial,
