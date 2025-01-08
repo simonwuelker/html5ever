@@ -22,16 +22,17 @@ use self::states::{Rawtext, Rcdata, ScriptData, ScriptDataEscaped};
 use self::char_ref::{CharRef, CharRefTokenizer};
 
 use crate::util::str::lower_ascii_letter;
-
 use log::{debug, trace};
 use mac::format_if;
-use markup5ever::{ns, small_char_set, TokenizerResult};
+use markup5ever::{
+    buffer_queue::BufferQueue, ns, small_char_set, InputSink, ParserAction, TokenizerResult,
+};
 use std::borrow::Cow::{self, Borrowed};
 use std::cell::{Cell, RefCell, RefMut};
 use std::collections::BTreeMap;
-use std::mem;
+use std::{iter, mem};
 
-pub use crate::buffer_queue::{BufferQueue, FromSet, NotFromSet, SetResult};
+pub use crate::buffer_queue::{FromSet, NotFromSet, SetResult};
 use crate::tendril::StrTendril;
 use crate::{Attribute, LocalName, QualName, SmallCharSet};
 
@@ -2001,13 +2002,27 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     }
 }
 
+impl<Sink> InputSink for Tokenizer<Sink>
+where
+    Sink: TokenSink,
+{
+    type Handle = Sink::Handle;
+
+    fn feed<'a>(
+        &'a self,
+        input: &'a BufferQueue,
+    ) -> impl Iterator<Item = ParserAction<Self::Handle>> + 'a {
+        iter::from_fn(|| self.feed(input).into())
+    }
+}
+
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod test {
     use super::option_push; // private items
-    use crate::tendril::{SliceExt, StrTendril};
-
     use super::{TokenSink, TokenSinkResult, Tokenizer, TokenizerOpts};
+    use crate::tendril::{SliceExt, StrTendril};
+    use crate::LocalName;
 
     use super::interface::{CharacterTokens, EOFToken, NullCharacterToken, ParseError};
     use super::interface::{EndTag, StartTag, Tag, TagKind};
@@ -2015,8 +2030,6 @@ mod test {
 
     use markup5ever::buffer_queue::BufferQueue;
     use std::cell::RefCell;
-
-    use crate::LocalName;
 
     // LinesMatch implements the TokenSink trait. It is used for testing to see
     // if current_line is being updated when process_token is called. The lines
