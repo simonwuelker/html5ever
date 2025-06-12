@@ -1,6 +1,6 @@
 use tendril::StrTendril;
 
-use crate::buffer_queue::BufferQueue;
+use crate::buffer_queue::{self, BufferQueue};
 
 /// <https://html.spec.whatwg.org/#input-stream>
 #[derive(Default)]
@@ -25,11 +25,19 @@ impl InputStream {
 }
 
 pub struct DecodingParser<Sink> {
-    /// Data received from `document.write`
+    /// Data from a `document.write` call that is *currently* executing.
+    ///
+    /// As soon as the call is finished, any remaining input goes into the `script_input` field.
+    document_write_input: RefCell<Vec<BufferQueue>>,
+    /// Pending input from `document.write` calls that blocked the parser before they could finish
+    /// parsing all their input.
+    ///
+    /// As soon as the `<script>` that made these calles finished executing, this data goes to the
+    /// front of the input stream.
     script_input: BufferQueue,
     input_stream: InputStream,
     /// Something that can consume buffered input.
-    /// In practice this is likely either html- or an xml tokenizer.
+    /// In practice this is likely either a html- or an xml tokenizer.
     input_sink: Sink,
 }
 
@@ -39,6 +47,7 @@ where
 {
     pub fn new(sink: Sink) -> Self {
         Self {
+            document_write_input: Default::default(),
             script_input: Default::default(),
             input_stream: InputStream::default(),
             input_sink: sink,
@@ -55,27 +64,56 @@ where
 
     /// Return an iterator that can be used to drive the parser
     pub fn parse(&self) -> impl Iterator<Item = ParserAction<Sink::Handle>> + '_ {
+        // Either there is a pending parser blocking script (and this parser should therefore be suspended)
+        // or you forgot to call notify_parser_blocking_script_loaded!
+        debug_assert!(self.script_input.is_empty());
+
         self.input_sink.feed(self.input_stream.code_points())
     }
 
     /// Returns an iterator that can be used to drive the parser
     pub fn document_write<'a>(
         &'a self,
-        input: &'a BufferQueue,
+        input: &BufferQueue,
     ) -> impl Iterator<Item = ParserAction<Sink::Handle>> + use<'a, Sink> {
+        debug_assert!(
+            self.document_write_input.is_empty(),
+            "There is already a document.write call that did not yet finish?"
+        );
         debug_assert!(
             self.script_input.is_empty(),
             "Should not parse input from document.write while the parser is suspended"
         );
+        // let buffer_queue = BufferQueue::default();
+        // buffer_queue.push_back(input);
+        // self.document_write_input.borrow_mut().push(buffer_queue);
+
 
         self.input_sink.feed(&input)
     }
 
-    /// End a `document.write` transaction, appending any input that was not yet parsed to the
-    /// current insertion point, behind any input that was received reentrantly during this transaction.
-    pub fn push_script_input(&self, input: &BufferQueue) {
-        while let Some(chunk) = input.pop_front() {
-            self.script_input.push_back(chunk);
+    // pub fn perform_document_writing(&self) -> Option<ParserAction<Sink::Handle>> {
+    //     self.script_input.push_back(input);
+    // }
+
+    // /// End a `document.write` transaction, appending any input that was not yet parsed to the
+    // /// current insertion point, behind any input that was received reentrantly during this transaction.
+    // ///
+    // /// A `document.write` call may be unable to immediately parse all input if a pending parser blocking
+    // /// script was inserted.
+    // pub fn end_document_write_transaction(&self) {
+    //     let state = self.document_write_input.borrow_mut().pop().expect("no active transaction");
+
+    //     // Append leftover document.write input to the script input - we know there is currently
+    //     // a parser blocking script, because that's what invoked document.write in the first place.
+    //     while let Some(chunk) = self.document_write_input.pop_front() {
+    //         self.script_input.push_back(chunk);
+    //     }
+    // }
+
+    pub fn push_script_input(&self, input: BufferQueue) {
+        while let Some(c) = input.pop_front() {
+            self.script_input.push_back(c);
         }
     }
 
