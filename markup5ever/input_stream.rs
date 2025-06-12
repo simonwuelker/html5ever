@@ -1,3 +1,6 @@
+use std::iter;
+use std::cell::RefCell;
+
 use tendril::StrTendril;
 
 use crate::buffer_queue::{self, BufferQueue};
@@ -74,47 +77,45 @@ where
     /// Returns an iterator that can be used to drive the parser
     pub fn document_write<'a>(
         &'a self,
-        input: &BufferQueue,
+        input: StrTendril,
     ) -> impl Iterator<Item = ParserAction<Sink::Handle>> + use<'a, Sink> {
-        debug_assert!(
-            self.document_write_input.is_empty(),
-            "There is already a document.write call that did not yet finish?"
-        );
         debug_assert!(
             self.script_input.is_empty(),
             "Should not parse input from document.write while the parser is suspended"
         );
-        // let buffer_queue = BufferQueue::default();
-        // buffer_queue.push_back(input);
-        // self.document_write_input.borrow_mut().push(buffer_queue);
+        let buffer_queue = BufferQueue::default();
+        buffer_queue.push_back(input);
+        self.document_write_input.borrow_mut().push(buffer_queue);
 
+        iter::from_fn(|| {
+            let document_write_stack =  self.document_write_input.borrow();
+            let active_document_write_state = document_write_stack.last().expect("no transaction?");
 
-        self.input_sink.feed(&input)
+            // Curiously, this temporary *is* required.
+            let x = self.input_sink.feed(&active_document_write_state).next();
+            x
+        })
     }
 
     // pub fn perform_document_writing(&self) -> Option<ParserAction<Sink::Handle>> {
     //     self.script_input.push_back(input);
     // }
 
-    // /// End a `document.write` transaction, appending any input that was not yet parsed to the
-    // /// current insertion point, behind any input that was received reentrantly during this transaction.
-    // ///
-    // /// A `document.write` call may be unable to immediately parse all input if a pending parser blocking
-    // /// script was inserted.
-    // pub fn end_document_write_transaction(&self) {
-    //     let state = self.document_write_input.borrow_mut().pop().expect("no active transaction");
+    /// End a `document.write` transaction, appending any input that was not yet parsed to the
+    /// current insertion point, behind any input that was received reentrantly during this transaction.
+    ///
+    /// A `document.write` call may be unable to immediately parse all input if a pending parser blocking
+    /// script was inserted.
+    pub fn end_document_write_transaction(&self) {
+        let input = self.document_write_input.borrow_mut().pop().expect("no active transaction?");
 
-    //     // Append leftover document.write input to the script input - we know there is currently
-    //     // a parser blocking script, because that's what invoked document.write in the first place.
-    //     while let Some(chunk) = self.document_write_input.pop_front() {
-    //         self.script_input.push_back(chunk);
-    //     }
-    // }
-
-    pub fn push_script_input(&self, input: BufferQueue) {
-        while let Some(c) = input.pop_front() {
-            self.script_input.push_back(c);
+        while let Some(chunk) = input.pop_front() {
+            self.script_input.push_back(chunk);
         }
+    }
+
+    pub fn push_script_input(&self, input: StrTendril) {
+        self.script_input.push_back(input);
     }
 
     /// Notifies the parser that it has been unblocked and parsing can resume
