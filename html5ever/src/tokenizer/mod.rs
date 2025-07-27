@@ -125,7 +125,7 @@ pub struct Tokenizer<Sink> {
     discard_bom: bool,
 
     /// Current tag kind.
-    current_tag_kind: Cell<TagKind>,
+    current_tag_kind: TagKind,
 
     /// Current tag name.
     current_tag_name: StrTendril,
@@ -183,7 +183,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             reconsume: Cell::new(false),
             ignore_lf: Cell::new(false),
             discard_bom: discard_bom,
-            current_tag_kind: Cell::new(StartTag),
+            current_tag_kind: StartTag,
             current_tag_name: StrTendril::new(),
             current_tag_self_closing: false,
             current_tag_attrs: vec![],
@@ -419,7 +419,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         let name = LocalName::from(&*self.current_tag_name);
         self.current_tag_name.clear();
 
-        match self.current_tag_kind.get() {
+        match self.current_tag_kind {
             StartTag => {
                 *self.last_start_tag_name.borrow_mut() = Some(name.clone());
             },
@@ -434,7 +434,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         }
 
         let token = TagToken(Tag {
-            kind: self.current_tag_kind.get(),
+            kind: self.current_tag_kind,
             name,
             self_closing: self.current_tag_self_closing,
             attrs: std::mem::take(&mut self.current_tag_attrs),
@@ -485,14 +485,12 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     fn create_tag(&mut self, kind: TagKind, c: char) {
         self.discard_tag();
         self.current_tag_name.push_char(c);
-        self.current_tag_kind.set(kind);
+        self.current_tag_kind = kind;
     }
 
     fn have_appropriate_end_tag(&self) -> bool {
         match self.last_start_tag_name.borrow().as_ref() {
-            Some(last) => {
-                (self.current_tag_kind.get() == EndTag) && (*self.current_tag_name == *last)
-            },
+            Some(last) => (self.current_tag_kind == EndTag) && (*self.current_tag_name == *last),
             None => false,
         }
     }
