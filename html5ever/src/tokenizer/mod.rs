@@ -131,7 +131,7 @@ pub struct Tokenizer<Sink> {
     current_tag_name: StrTendril,
 
     /// Current tag is self-closing?
-    current_tag_self_closing: Cell<bool>,
+    current_tag_self_closing: bool,
 
     /// Current tag attributes.
     current_tag_attrs: Vec<Attribute>,
@@ -185,7 +185,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             discard_bom: discard_bom,
             current_tag_kind: Cell::new(StartTag),
             current_tag_name: StrTendril::new(),
-            current_tag_self_closing: Cell::new(false),
+            current_tag_self_closing: false,
             current_tag_attrs: vec![],
             current_attr_name: RefCell::new(StrTendril::new()),
             current_attr_value: RefCell::new(StrTendril::new()),
@@ -427,7 +427,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
                 if !self.current_tag_attrs.is_empty() {
                     self.emit_error(Borrowed("Attributes on an end tag"));
                 }
-                if self.current_tag_self_closing.get() {
+                if self.current_tag_self_closing {
                     self.emit_error(Borrowed("Self-closing end tag"));
                 }
             },
@@ -436,7 +436,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         let token = TagToken(Tag {
             kind: self.current_tag_kind.get(),
             name,
-            self_closing: self.current_tag_self_closing.get(),
+            self_closing: self.current_tag_self_closing,
             attrs: std::mem::take(&mut self.current_tag_attrs),
         });
 
@@ -478,7 +478,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
 
     fn discard_tag(&mut self) {
         self.current_tag_name.clear();
-        self.current_tag_self_closing.set(false);
+        self.current_tag_self_closing = false;
         self.current_tag_attrs = vec![];
     }
 
@@ -1270,7 +1270,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             states::SelfClosingStartTag => loop {
                 match get_char!(self, input) {
                     '>' => {
-                        self.current_tag_self_closing.set(true);
+                        self.current_tag_self_closing = true;
                         go!(self: emit_tag Data);
                     },
                     _ => {
