@@ -149,7 +149,7 @@ pub struct Tokenizer<Sink> {
     current_doctype: Doctype,
 
     /// Last start tag name, for use in checking "appropriate end tag".
-    last_start_tag_name: RefCell<Option<LocalName>>,
+    last_start_tag_name: Option<LocalName>,
 
     /// The "temporary buffer" mentioned in the spec.
     temp_buf: RefCell<StrTendril>,
@@ -191,7 +191,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             current_attr_value: StrTendril::new(),
             current_comment: StrTendril::new(),
             current_doctype: Doctype::default(),
-            last_start_tag_name: RefCell::new(start_tag_name),
+            last_start_tag_name: start_tag_name,
             temp_buf: RefCell::new(StrTendril::new()),
             state_profile: BTreeMap::new(),
             time_in_sink: 0,
@@ -421,7 +421,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
 
         match self.current_tag_kind {
             StartTag => {
-                *self.last_start_tag_name.borrow_mut() = Some(name.clone());
+                self.last_start_tag_name = Some(name.clone());
             },
             EndTag => {
                 if !self.current_tag_attrs.is_empty() {
@@ -489,7 +489,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     }
 
     fn have_appropriate_end_tag(&self) -> bool {
-        match self.last_start_tag_name.borrow().as_ref() {
+        match self.last_start_tag_name.as_ref() {
             Some(last) => (self.current_tag_kind == EndTag) && (*self.current_tag_name == *last),
             None => false,
         }
