@@ -134,7 +134,7 @@ pub struct Tokenizer<Sink> {
     current_tag_self_closing: Cell<bool>,
 
     /// Current tag attributes.
-    current_tag_attrs: RefCell<Vec<Attribute>>,
+    current_tag_attrs: Vec<Attribute>,
 
     /// Current attribute name.
     current_attr_name: RefCell<StrTendril>,
@@ -186,7 +186,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             current_tag_kind: Cell::new(StartTag),
             current_tag_name: StrTendril::new(),
             current_tag_self_closing: Cell::new(false),
-            current_tag_attrs: RefCell::new(vec![]),
+            current_tag_attrs: vec![],
             current_attr_name: RefCell::new(StrTendril::new()),
             current_attr_value: RefCell::new(StrTendril::new()),
             current_comment: RefCell::new(StrTendril::new()),
@@ -424,7 +424,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
                 *self.last_start_tag_name.borrow_mut() = Some(name.clone());
             },
             EndTag => {
-                if !self.current_tag_attrs.borrow().is_empty() {
+                if !self.current_tag_attrs.is_empty() {
                     self.emit_error(Borrowed("Attributes on an end tag"));
                 }
                 if self.current_tag_self_closing.get() {
@@ -437,7 +437,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             kind: self.current_tag_kind.get(),
             name,
             self_closing: self.current_tag_self_closing.get(),
-            attrs: std::mem::take(&mut self.current_tag_attrs.borrow_mut()),
+            attrs: std::mem::take(&mut self.current_tag_attrs),
         });
 
         match self.process_token(token) {
@@ -479,7 +479,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     fn discard_tag(&mut self) {
         self.current_tag_name.clear();
         self.current_tag_self_closing.set(false);
-        *self.current_tag_attrs.borrow_mut() = vec![];
+        self.current_tag_attrs = vec![];
     }
 
     fn create_tag(&mut self, kind: TagKind, c: char) {
@@ -491,20 +491,19 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     fn have_appropriate_end_tag(&self) -> bool {
         match self.last_start_tag_name.borrow().as_ref() {
             Some(last) => {
-                (self.current_tag_kind.get() == EndTag)
-                    && (*self.current_tag_name == *last)
+                (self.current_tag_kind.get() == EndTag) && (*self.current_tag_name == *last)
             },
             None => false,
         }
     }
 
-    fn create_attribute(&self, c: char) {
+    fn create_attribute(&mut self, c: char) {
         self.finish_attribute();
 
         self.current_attr_name.borrow_mut().push_char(c);
     }
 
-    fn finish_attribute(&self) {
+    fn finish_attribute(&mut self) {
         if self.current_attr_name.borrow().is_empty() {
             return;
         }
@@ -514,7 +513,6 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         let dup = {
             let name = &*self.current_attr_name.borrow();
             self.current_tag_attrs
-                .borrow()
                 .iter()
                 .any(|a| *a.name.local == **name)
         };
@@ -526,7 +524,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         } else {
             let name = LocalName::from(&**self.current_attr_name.borrow());
             self.current_attr_name.borrow_mut().clear();
-            self.current_tag_attrs.borrow_mut().push(Attribute {
+            self.current_tag_attrs.push(Attribute {
                 // The tree builder will adjust the namespace if necessary.
                 // This only happens in foreign elements.
                 name: QualName::new(None, ns!(), name),
