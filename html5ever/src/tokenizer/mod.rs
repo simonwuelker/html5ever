@@ -140,7 +140,7 @@ pub struct Tokenizer<Sink> {
     current_attr_name: StrTendril,
 
     /// Current attribute value.
-    current_attr_value: RefCell<StrTendril>,
+    current_attr_value: StrTendril,
 
     /// Current comment.
     current_comment: StrTendril,
@@ -188,7 +188,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             current_tag_self_closing: false,
             current_tag_attrs: vec![],
             current_attr_name: StrTendril::new(),
-            current_attr_value: RefCell::new(StrTendril::new()),
+            current_attr_value: StrTendril::new(),
             current_comment: StrTendril::new(),
             current_doctype: RefCell::new(Doctype::default()),
             last_start_tag_name: RefCell::new(start_tag_name),
@@ -518,7 +518,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         if dup {
             self.emit_error(Borrowed("Duplicate attribute"));
             self.current_attr_name.clear();
-            self.current_attr_value.borrow_mut().clear();
+            self.current_attr_value.clear();
         } else {
             let name = LocalName::from(&*self.current_attr_name);
             self.current_attr_name.clear();
@@ -526,7 +526,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
                 // The tree builder will adjust the namespace if necessary.
                 // This only happens in foreign elements.
                 name: QualName::new(None, ns!(), name),
-                value: mem::take(&mut self.current_attr_value.borrow_mut()),
+                value: mem::take(&mut self.current_attr_value),
             });
         }
     }
@@ -603,8 +603,8 @@ macro_rules! shorthand (
     ( $me:ident : clear_temp                       ) => ( $me.clear_temp_buf()                                );
     ( $me:ident : create_attr $c:expr              ) => ( $me.create_attribute($c)                            );
     ( $me:ident : push_name $c:expr                ) => ( $me.current_attr_name.push_char($c)    );
-    ( $me:ident : push_value $c:expr               ) => ( $me.current_attr_value.borrow_mut().push_char($c)   );
-    ( $me:ident : append_value $c:expr             ) => ( $me.current_attr_value.borrow_mut().push_tendril($c));
+    ( $me:ident : push_value $c:expr               ) => ( $me.current_attr_value.push_char($c)   );
+    ( $me:ident : append_value $c:expr             ) => ( $me.current_attr_value.push_tendril($c));
     ( $me:ident : push_comment $c:expr             ) => ( $me.current_comment.push_char($c)      );
     ( $me:ident : append_comment $c:expr           ) => ( $me.current_comment.push_slice($c)     );
     ( $me:ident : emit_comment                     ) => ( $me.emit_current_comment()                          );
@@ -1671,7 +1671,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         progress
     }
 
-    fn process_char_ref(&self, char_ref: CharRef) {
+    fn process_char_ref(&mut self, char_ref: CharRef) {
         let CharRef {
             mut chars,
             mut num_chars,
