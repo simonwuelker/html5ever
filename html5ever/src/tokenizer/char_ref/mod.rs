@@ -297,7 +297,7 @@ impl CharRefTokenizer {
 
     fn finish_named<Sink: TokenSink>(
         &mut self,
-        tokenizer: &Tokenizer<Sink>,
+        tokenizer: &mut Tokenizer<Sink>,
         input: &BufferQueue,
         end_char: Option<char>,
     ) -> Status {
@@ -368,7 +368,7 @@ impl CharRefTokenizer {
                     Status::Done(CharRef::EMPTY)
                 } else {
                     input.push_front(StrTendril::from_slice(&self.name_buf()[name_len..]));
-                    tokenizer.ignore_lf.set(false);
+                    tokenizer.ignore_lf = false;
                     Status::Done(CharRef {
                         chars: [from_u32(c1).unwrap(), from_u32(c2).unwrap()],
                         num_chars: if c2 == 0 { 1 } else { 2 },
@@ -401,7 +401,7 @@ impl CharRefTokenizer {
 
     pub(super) fn end_of_file<Sink: TokenSink>(
         &mut self,
-        tokenizer: &Tokenizer<Sink>,
+        tokenizer: &mut Tokenizer<Sink>,
         input: &BufferQueue,
     ) -> CharRef {
         loop {

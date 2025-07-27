@@ -118,7 +118,7 @@ pub struct Tokenizer<Sink> {
 
     /// Did we just consume \r, translating it to \n?  In that case we need
     /// to ignore the next character if it's \n.
-    ignore_lf: Cell<bool>,
+    ignore_lf: bool,
 
     /// Discard a U+FEFF BYTE ORDER MARK if we see one?  Only done at the
     /// beginning of the stream.
@@ -181,7 +181,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             at_eof: false,
             current_char: '\0',
             reconsume: false,
-            ignore_lf: Cell::new(false),
+            ignore_lf: false,
             discard_bom: discard_bom,
             current_tag_kind: StartTag,
             current_tag_name: StrTendril::new(),
@@ -243,15 +243,15 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     // Get the next input character, which might be the character
     // 'c' that we already consumed from the buffers.
     fn get_preprocessed_char(&mut self, mut c: char, input: &BufferQueue) -> Option<char> {
-        if self.ignore_lf.get() {
-            self.ignore_lf.set(false);
+        if self.ignore_lf {
+            self.ignore_lf = false;
             if c == '\n' {
                 c = input.next()?;
             }
         }
 
         if c == '\r' {
-            self.ignore_lf.set(true);
+            self.ignore_lf = true;
             c = '\n';
         }
 
@@ -293,7 +293,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         // This means that `FromSet` can contain characters not in the set!
         // It shouldn't matter because the fallback `FromSet` case should
         // always do the same thing as the `NotFromSet` case.
-        if self.opts.exact_errors || self.reconsume || self.ignore_lf.get() {
+        if self.opts.exact_errors || self.reconsume || self.ignore_lf {
             return self.get_char(input).map(FromSet);
         }
 
@@ -314,8 +314,8 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     //
     // NB: this doesn't set the current input character.
     fn eat(&mut self, input: &BufferQueue, pat: &str, eq: fn(&u8, &u8) -> bool) -> Option<bool> {
-        if self.ignore_lf.get() {
-            self.ignore_lf.set(false);
+        if self.ignore_lf {
+            self.ignore_lf = false;
             if self.peek(input) == Some('\n') {
                 self.discard_char(input);
             }
@@ -704,9 +704,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
                 let set = small_char_set!('\r' '\0' '&' '<' '\n');
 
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
-                let set_result = if !(self.opts.exact_errors
-                    || self.reconsume
-                    || self.ignore_lf.get())
+                let set_result = if !(self.opts.exact_errors || self.reconsume || self.ignore_lf)
                     && Self::is_supported_simd_feature_detected()
                 {
                     let front_buffer = input.peek_front_chunk_mut();
@@ -1707,7 +1705,8 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         match self.char_ref_tokenizer.take() {
             None => (),
             Some(mut tokenizer) => {
-                self.process_char_ref(tokenizer.end_of_file(self, &input));
+                let character_reference = tokenizer.end_of_file(self, &input);
+                self.process_char_ref(character_reference);
             },
         }
 
