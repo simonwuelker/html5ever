@@ -26,7 +26,7 @@ use crate::util::str::lower_ascii_letter;
 use log::{debug, trace};
 use markup5ever::{ns, small_char_set, TokenizerResult};
 use std::borrow::Cow::{self, Borrowed};
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::mem;
 
@@ -152,7 +152,7 @@ pub struct Tokenizer<Sink> {
     last_start_tag_name: Option<LocalName>,
 
     /// The "temporary buffer" mentioned in the spec.
-    temp_buf: RefCell<StrTendril>,
+    temp_buf: StrTendril,
 
     /// Record of how many ns we spent in each state, if profiling is enabled.
     state_profile: BTreeMap<states::State, u64>,
@@ -192,7 +192,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             current_comment: StrTendril::new(),
             current_doctype: Doctype::default(),
             last_start_tag_name: start_tag_name,
-            temp_buf: RefCell::new(StrTendril::new()),
+            temp_buf: StrTendril::new(),
             state_profile: BTreeMap::new(),
             time_in_sink: 0,
             current_line: Cell::new(1),
@@ -321,12 +321,12 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             }
         }
 
-        input.push_front(mem::take(&mut self.temp_buf.borrow_mut()));
+        input.push_front(mem::take(&mut self.temp_buf));
         match input.eat(pat, eq) {
             None if self.at_eof => Some(false),
             None => {
                 while let Some(data) = input.next() {
-                    self.temp_buf.borrow_mut().push_char(data);
+                    self.temp_buf.push_char(data);
                 }
                 None
             },
@@ -462,13 +462,13 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         trace!("  emit_temp");
 
         // FIXME: Make sure that clearing on emit is spec-compatible.
-        let buf = mem::take(&mut *self.temp_buf.borrow_mut());
+        let buf = mem::take(&mut self.temp_buf);
         self.emit_chars(buf);
     }
 
-    fn clear_temp_buf(&self) {
+    fn clear_temp_buf(&mut self) {
         // Do this without a new allocation.
-        self.temp_buf.borrow_mut().clear();
+        self.temp_buf.clear();
     }
 
     fn emit_current_comment(&mut self) {
@@ -598,7 +598,7 @@ macro_rules! shorthand (
     ( $me:ident : push_tag $c:expr                 ) => ( $me.current_tag_name.push_char($c)     );
     ( $me:ident : discard_tag                      ) => ( $me.discard_tag()                                   );
     ( $me:ident : discard_char $input:expr         ) => ( $me.discard_char($input)                            );
-    ( $me:ident : push_temp $c:expr                ) => ( $me.temp_buf.borrow_mut().push_char($c)             );
+    ( $me:ident : push_temp $c:expr                ) => ( $me.temp_buf.push_char($c)             );
     ( $me:ident : clear_temp                       ) => ( $me.clear_temp_buf()                                );
     ( $me:ident : create_attr $c:expr              ) => ( $me.create_attribute($c)                            );
     ( $me:ident : push_name $c:expr                ) => ( $me.current_attr_name.push_char($c)    );
@@ -991,7 +991,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
                 let c = get_char!(self, input);
                 match c {
                     '\t' | '\n' | '\x0C' | ' ' | '/' | '>' => {
-                        let esc = if &**self.temp_buf.borrow() == "script" {
+                        let esc = if &*self.temp_buf == "script" {
                             DoubleEscaped
                         } else {
                             Escaped
@@ -1089,7 +1089,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
                 let c = get_char!(self, input);
                 match c {
                     '\t' | '\n' | '\x0C' | ' ' | '/' | '>' => {
-                        let esc = if &**self.temp_buf.borrow() == "script" {
+                        let esc = if &*self.temp_buf == "script" {
                             Escaped
                         } else {
                             DoubleEscaped
