@@ -158,7 +158,7 @@ pub struct Tokenizer<Sink> {
     state_profile: BTreeMap<states::State, u64>,
 
     /// Record of how many ns we spent in the token sink.
-    time_in_sink: Cell<u64>,
+    time_in_sink: u64,
 
     /// Track current line
     current_line: Cell<u64>,
@@ -194,7 +194,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             last_start_tag_name: RefCell::new(start_tag_name),
             temp_buf: RefCell::new(StrTendril::new()),
             state_profile: BTreeMap::new(),
-            time_in_sink: Cell::new(0),
+            time_in_sink: 0,
             current_line: Cell::new(1),
         }
     }
@@ -222,17 +222,17 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         self.state = states::Plaintext;
     }
 
-    fn process_token(&self, token: Token) -> TokenSinkResult<Sink::Handle> {
+    fn process_token(&mut self, token: Token) -> TokenSinkResult<Sink::Handle> {
         if self.opts.profile {
             let (ret, dt) = time!(self.sink.process_token(token, self.current_line.get()));
-            self.time_in_sink.set(self.time_in_sink.get() + dt);
+            self.time_in_sink += dt;
             ret
         } else {
             self.sink.process_token(token, self.current_line.get())
         }
     }
 
-    fn process_token_and_continue(&self, token: Token) {
+    fn process_token_and_continue(&mut self, token: Token) {
         assert!(matches!(
             self.process_token(token),
             TokenSinkResult::Continue
@@ -339,9 +339,9 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         if self.opts.profile {
             loop {
                 let state = self.state;
-                let old_sink = self.time_in_sink.get();
+                let old_sink = self.time_in_sink;
                 let (run, mut dt) = time!(self.step(input));
-                dt -= (self.time_in_sink.get() - old_sink);
+                dt -= (self.time_in_sink - old_sink);
                 let new = match self.state_profile.get_mut(&state) {
                     Some(x) => {
                         *x += dt;
@@ -372,7 +372,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     }
 
     #[inline]
-    fn bad_char_error(&self) {
+    fn bad_char_error(&mut self) {
         #[cfg(feature = "trace_tokenizer")]
         trace!("  error");
 
@@ -386,7 +386,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     }
 
     #[inline]
-    fn bad_eof_error(&self) {
+    fn bad_eof_error(&mut self) {
         #[cfg(feature = "trace_tokenizer")]
         trace!("  error_eof");
 
@@ -398,7 +398,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         self.emit_error(msg);
     }
 
-    fn emit_char(&self, c: char) {
+    fn emit_char(&mut self, c: char) {
         #[cfg(feature = "trace_tokenizer")]
         trace!("  emit");
 
@@ -409,7 +409,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     }
 
     // The string must not contain '\0'!
-    fn emit_chars(&self, b: StrTendril) {
+    fn emit_chars(&mut self, b: StrTendril) {
         self.process_token_and_continue(CharacterTokens(b));
     }
 
@@ -457,7 +457,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         }
     }
 
-    fn emit_temp_buf(&self) {
+    fn emit_temp_buf(&mut self) {
         #[cfg(feature = "trace_tokenizer")]
         trace!("  emit_temp");
 
@@ -561,7 +561,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         self.char_ref_tokenizer = Some(CharRefTokenizer::new(is_in_attribute));
     }
 
-    fn emit_eof(&self) {
+    fn emit_eof(&mut self) {
         self.process_token_and_continue(EOFToken);
     }
 
@@ -586,7 +586,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         }
     }
 
-    fn emit_error(&self, error: Cow<'static, str>) {
+    fn emit_error(&mut self, error: Cow<'static, str>) {
         self.process_token_and_continue(ParseError(error));
     }
 }
@@ -1740,10 +1740,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             .map(|&(_, t)| t)
             .fold(0, ::std::ops::Add::add);
         println!("\nTokenizer profile, in nanoseconds");
-        println!(
-            "\n{:12}         total in token sink",
-            self.time_in_sink.get()
-        );
+        println!("\n{:12}         total in token sink", self.time_in_sink);
         println!("\n{total:12}         total in tokenizer");
 
         for (k, v) in results.into_iter() {

@@ -204,7 +204,7 @@ impl CharRefTokenizer {
 
     fn unconsume_numeric<Sink: TokenSink>(
         &mut self,
-        tokenizer: &Tokenizer<Sink>,
+        tokenizer: &mut Tokenizer<Sink>,
         input: &BufferQueue,
     ) -> Status {
         let mut unconsume = StrTendril::from_char('#');
@@ -217,7 +217,7 @@ impl CharRefTokenizer {
         Status::Done(CharRef::EMPTY)
     }
 
-    fn finish_numeric<Sink: TokenSink>(&mut self, tokenizer: &Tokenizer<Sink>) -> Status {
+    fn finish_numeric<Sink: TokenSink>(&mut self, tokenizer: &mut Tokenizer<Sink>) -> Status {
         fn conv(n: u32) -> char {
             from_u32(n).expect("invalid char missed by error handling cases")
         }
@@ -282,7 +282,7 @@ impl CharRefTokenizer {
         }
     }
 
-    fn emit_name_error<Sink: TokenSink>(&mut self, tokenizer: &Tokenizer<Sink>) {
+    fn emit_name_error<Sink: TokenSink>(&mut self, tokenizer: &mut Tokenizer<Sink>) {
         let msg = if tokenizer.opts.exact_errors {
             Cow::from(format!("Invalid character reference &{}", self.name_buf()))
         } else {
