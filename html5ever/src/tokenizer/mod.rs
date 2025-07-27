@@ -143,7 +143,7 @@ pub struct Tokenizer<Sink> {
     current_attr_value: RefCell<StrTendril>,
 
     /// Current comment.
-    current_comment: RefCell<StrTendril>,
+    current_comment: StrTendril,
 
     /// Current doctype token.
     current_doctype: RefCell<Doctype>,
@@ -189,7 +189,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             current_tag_attrs: vec![],
             current_attr_name: StrTendril::new(),
             current_attr_value: RefCell::new(StrTendril::new()),
-            current_comment: RefCell::new(StrTendril::new()),
+            current_comment: StrTendril::new(),
             current_doctype: RefCell::new(Doctype::default()),
             last_start_tag_name: RefCell::new(start_tag_name),
             temp_buf: RefCell::new(StrTendril::new()),
@@ -471,8 +471,8 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         self.temp_buf.borrow_mut().clear();
     }
 
-    fn emit_current_comment(&self) {
-        let comment = mem::take(&mut *self.current_comment.borrow_mut());
+    fn emit_current_comment(&mut self) {
+        let comment = mem::take(&mut self.current_comment);
         self.process_token_and_continue(CommentToken(comment));
     }
 
@@ -605,10 +605,10 @@ macro_rules! shorthand (
     ( $me:ident : push_name $c:expr                ) => ( $me.current_attr_name.push_char($c)    );
     ( $me:ident : push_value $c:expr               ) => ( $me.current_attr_value.borrow_mut().push_char($c)   );
     ( $me:ident : append_value $c:expr             ) => ( $me.current_attr_value.borrow_mut().push_tendril($c));
-    ( $me:ident : push_comment $c:expr             ) => ( $me.current_comment.borrow_mut().push_char($c)      );
-    ( $me:ident : append_comment $c:expr           ) => ( $me.current_comment.borrow_mut().push_slice($c)     );
+    ( $me:ident : push_comment $c:expr             ) => ( $me.current_comment.push_char($c)      );
+    ( $me:ident : append_comment $c:expr           ) => ( $me.current_comment.push_slice($c)     );
     ( $me:ident : emit_comment                     ) => ( $me.emit_current_comment()                          );
-    ( $me:ident : clear_comment                    ) => ( $me.current_comment.borrow_mut().clear()            );
+    ( $me:ident : clear_comment                    ) => ( $me.current_comment.clear()            );
     ( $me:ident : create_doctype                   ) => ( *$me.current_doctype.borrow_mut() = Doctype::default() );
     ( $me:ident : push_doctype_name $c:expr        ) => ( option_push(&mut $me.current_doctype.borrow_mut().name, $c) );
     ( $me:ident : push_doctype_id $k:ident $c:expr ) => ( option_push(&mut $me.doctype_id($k), $c)            );
