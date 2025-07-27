@@ -155,7 +155,7 @@ pub struct Tokenizer<Sink> {
     temp_buf: RefCell<StrTendril>,
 
     /// Record of how many ns we spent in each state, if profiling is enabled.
-    state_profile: RefCell<BTreeMap<states::State, u64>>,
+    state_profile: BTreeMap<states::State, u64>,
 
     /// Record of how many ns we spent in the token sink.
     time_in_sink: Cell<u64>,
@@ -193,7 +193,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             current_doctype: Doctype::default(),
             last_start_tag_name: RefCell::new(start_tag_name),
             temp_buf: RefCell::new(StrTendril::new()),
-            state_profile: RefCell::new(BTreeMap::new()),
+            state_profile: BTreeMap::new(),
             time_in_sink: Cell::new(0),
             current_line: Cell::new(1),
         }
@@ -342,7 +342,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
                 let old_sink = self.time_in_sink.get();
                 let (run, mut dt) = time!(self.step(input));
                 dt -= (self.time_in_sink.get() - old_sink);
-                let new = match self.state_profile.borrow_mut().get_mut(&state) {
+                let new = match self.state_profile.get_mut(&state) {
                     Some(x) => {
                         *x += dt;
                         false
@@ -351,7 +351,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
                 };
                 if new {
                     // do this here because of borrow shenanigans
-                    self.state_profile.borrow_mut().insert(state, dt);
+                    self.state_profile.insert(state, dt);
                 }
                 match run {
                     ProcessResult::Continue => (),
@@ -1731,12 +1731,8 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     }
 
     fn dump_profile(&self) {
-        let mut results: Vec<(states::State, u64)> = self
-            .state_profile
-            .borrow()
-            .iter()
-            .map(|(s, t)| (*s, *t))
-            .collect();
+        let mut results: Vec<(states::State, u64)> =
+            self.state_profile.iter().map(|(s, t)| (*s, *t)).collect();
         results.sort_by(|&(_, x), &(_, y)| y.cmp(&x));
 
         let total: u64 = results
