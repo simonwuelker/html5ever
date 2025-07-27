@@ -137,7 +137,7 @@ pub struct Tokenizer<Sink> {
     current_tag_attrs: Vec<Attribute>,
 
     /// Current attribute name.
-    current_attr_name: RefCell<StrTendril>,
+    current_attr_name: StrTendril,
 
     /// Current attribute value.
     current_attr_value: RefCell<StrTendril>,
@@ -187,7 +187,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             current_tag_name: StrTendril::new(),
             current_tag_self_closing: false,
             current_tag_attrs: vec![],
-            current_attr_name: RefCell::new(StrTendril::new()),
+            current_attr_name: StrTendril::new(),
             current_attr_value: RefCell::new(StrTendril::new()),
             current_comment: RefCell::new(StrTendril::new()),
             current_doctype: RefCell::new(Doctype::default()),
@@ -498,30 +498,30 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     fn create_attribute(&mut self, c: char) {
         self.finish_attribute();
 
-        self.current_attr_name.borrow_mut().push_char(c);
+        self.current_attr_name.push_char(c);
     }
 
     fn finish_attribute(&mut self) {
-        if self.current_attr_name.borrow().is_empty() {
+        if self.current_attr_name.is_empty() {
             return;
         }
 
         // Check for a duplicate attribute.
         // FIXME: the spec says we should error as soon as the name is finished.
         let dup = {
-            let name = &*self.current_attr_name.borrow();
+            let name = &*self.current_attr_name;
             self.current_tag_attrs
                 .iter()
-                .any(|a| *a.name.local == **name)
+                .any(|a| *a.name.local == *name)
         };
 
         if dup {
             self.emit_error(Borrowed("Duplicate attribute"));
-            self.current_attr_name.borrow_mut().clear();
+            self.current_attr_name.clear();
             self.current_attr_value.borrow_mut().clear();
         } else {
-            let name = LocalName::from(&**self.current_attr_name.borrow());
-            self.current_attr_name.borrow_mut().clear();
+            let name = LocalName::from(&*self.current_attr_name);
+            self.current_attr_name.clear();
             self.current_tag_attrs.push(Attribute {
                 // The tree builder will adjust the namespace if necessary.
                 // This only happens in foreign elements.
@@ -602,7 +602,7 @@ macro_rules! shorthand (
     ( $me:ident : push_temp $c:expr                ) => ( $me.temp_buf.borrow_mut().push_char($c)             );
     ( $me:ident : clear_temp                       ) => ( $me.clear_temp_buf()                                );
     ( $me:ident : create_attr $c:expr              ) => ( $me.create_attribute($c)                            );
-    ( $me:ident : push_name $c:expr                ) => ( $me.current_attr_name.borrow_mut().push_char($c)    );
+    ( $me:ident : push_name $c:expr                ) => ( $me.current_attr_name.push_char($c)    );
     ( $me:ident : push_value $c:expr               ) => ( $me.current_attr_value.borrow_mut().push_char($c)   );
     ( $me:ident : append_value $c:expr             ) => ( $me.current_attr_value.borrow_mut().push_tendril($c));
     ( $me:ident : push_comment $c:expr             ) => ( $me.current_comment.borrow_mut().push_char($c)      );
