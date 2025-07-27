@@ -111,7 +111,7 @@ pub struct Tokenizer<Sink> {
     char_ref_tokenizer: Option<CharRefTokenizer>,
 
     /// Current input character.  Just consumed, may reconsume.
-    current_char: Cell<char>,
+    current_char: char,
 
     /// Should we reconsume the current input character?
     reconsume: bool,
@@ -179,7 +179,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             state: state,
             char_ref_tokenizer: None,
             at_eof: false,
-            current_char: Cell::new('\0'),
+            current_char: '\0',
             reconsume: false,
             ignore_lf: Cell::new(false),
             discard_bom: discard_bom,
@@ -242,7 +242,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     //§ preprocessing-the-input-stream
     // Get the next input character, which might be the character
     // 'c' that we already consumed from the buffers.
-    fn get_preprocessed_char(&self, mut c: char, input: &BufferQueue) -> Option<char> {
+    fn get_preprocessed_char(&mut self, mut c: char, input: &BufferQueue) -> Option<char> {
         if self.ignore_lf.get() {
             self.ignore_lf.set(false);
             if c == '\n' {
@@ -271,7 +271,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         }
 
         trace!("got character {c}");
-        self.current_char.set(c);
+        self.current_char = c;
         Some(c)
     }
 
@@ -280,7 +280,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     fn get_char(&mut self, input: &BufferQueue) -> Option<char> {
         if self.reconsume {
             self.reconsume = false;
-            Some(self.current_char.get())
+            Some(self.current_char)
         } else {
             input
                 .next()
@@ -379,7 +379,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         let msg = if self.opts.exact_errors {
             Cow::from("Bad character")
         } else {
-            let c = self.current_char.get();
+            let c = self.current_char;
             Cow::from(format!("Saw {c} in state {:?}", self.state))
         };
         self.emit_error(msg);
@@ -568,7 +568,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
 
     fn peek(&self, input: &BufferQueue) -> Option<char> {
         if self.reconsume {
-            Some(self.current_char.get())
+            Some(self.current_char)
         } else {
             input.peek()
         }
@@ -1909,7 +1909,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     ///
     /// [data state]: https://html.spec.whatwg.org/#data-state
     /// [here]: https://lemire.me/blog/2024/06/08/scan-html-faster-with-simd-instructions-chrome-edition/
-    unsafe fn data_state_simd_fast_path(&self, input: &mut StrTendril) -> Option<SetResult> {
+    unsafe fn data_state_simd_fast_path(&mut self, input: &mut StrTendril) -> Option<SetResult> {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         let (mut i, mut n_newlines) = self.data_state_sse2_fast_path(input);
 
