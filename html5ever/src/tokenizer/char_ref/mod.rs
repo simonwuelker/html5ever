@@ -100,7 +100,7 @@ impl CharRefTokenizer {
 impl CharRefTokenizer {
     pub(super) fn step<Sink: TokenSink>(
         &mut self,
-        tokenizer: &Tokenizer<Sink>,
+        tokenizer: &mut Tokenizer<Sink>,
         input: &BufferQueue,
     ) -> Status {
         debug!("char ref tokenizer stepping in state {:?}", self.state);
@@ -116,7 +116,7 @@ impl CharRefTokenizer {
 
     fn do_begin<Sink: TokenSink>(
         &mut self,
-        tokenizer: &Tokenizer<Sink>,
+        tokenizer: &mut Tokenizer<Sink>,
         input: &BufferQueue,
     ) -> Status {
         match tokenizer.peek(input) {
@@ -137,7 +137,7 @@ impl CharRefTokenizer {
 
     fn do_octothorpe<Sink: TokenSink>(
         &mut self,
-        tokenizer: &Tokenizer<Sink>,
+        tokenizer: &mut Tokenizer<Sink>,
         input: &BufferQueue,
     ) -> Status {
         match tokenizer.peek(input) {
@@ -157,7 +157,7 @@ impl CharRefTokenizer {
 
     fn do_numeric<Sink: TokenSink>(
         &mut self,
-        tokenizer: &Tokenizer<Sink>,
+        tokenizer: &mut Tokenizer<Sink>,
         input: &BufferQueue,
         base: u32,
     ) -> Status {
@@ -189,7 +189,7 @@ impl CharRefTokenizer {
 
     fn do_numeric_semicolon<Sink: TokenSink>(
         &mut self,
-        tokenizer: &Tokenizer<Sink>,
+        tokenizer: &mut Tokenizer<Sink>,
         input: &BufferQueue,
     ) -> Status {
         match tokenizer.peek(input) {
@@ -255,7 +255,7 @@ impl CharRefTokenizer {
 
     fn do_named<Sink: TokenSink>(
         &mut self,
-        tokenizer: &Tokenizer<Sink>,
+        tokenizer: &mut Tokenizer<Sink>,
         input: &BufferQueue,
     ) -> Status {
         // peek + discard skips over newline normalization, therefore making it easier to
@@ -380,7 +380,7 @@ impl CharRefTokenizer {
 
     fn do_bogus_name<Sink: TokenSink>(
         &mut self,
-        tokenizer: &Tokenizer<Sink>,
+        tokenizer: &mut Tokenizer<Sink>,
         input: &BufferQueue,
     ) -> Status {
         // peek + discard skips over newline normalization, therefore making it easier to

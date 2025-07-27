@@ -114,7 +114,7 @@ pub struct Tokenizer<Sink> {
     current_char: Cell<char>,
 
     /// Should we reconsume the current input character?
-    reconsume: Cell<bool>,
+    reconsume: bool,
 
     /// Did we just consume \r, translating it to \n?  In that case we need
     /// to ignore the next character if it's \n.
@@ -180,7 +180,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             char_ref_tokenizer: None,
             at_eof: false,
             current_char: Cell::new('\0'),
-            reconsume: Cell::new(false),
+            reconsume: false,
             ignore_lf: Cell::new(false),
             discard_bom: discard_bom,
             current_tag_kind: StartTag,
@@ -277,9 +277,9 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
 
     //§ tokenization
     // Get the next input character, if one is available.
-    fn get_char(&self, input: &BufferQueue) -> Option<char> {
-        if self.reconsume.get() {
-            self.reconsume.set(false);
+    fn get_char(&mut self, input: &BufferQueue) -> Option<char> {
+        if self.reconsume {
+            self.reconsume = false;
             Some(self.current_char.get())
         } else {
             input
@@ -288,12 +288,12 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         }
     }
 
-    fn pop_except_from(&self, input: &BufferQueue, set: SmallCharSet) -> Option<SetResult> {
+    fn pop_except_from(&mut self, input: &BufferQueue, set: SmallCharSet) -> Option<SetResult> {
         // Bail to the slow path for various corner cases.
         // This means that `FromSet` can contain characters not in the set!
         // It shouldn't matter because the fallback `FromSet` case should
         // always do the same thing as the `NotFromSet` case.
-        if self.opts.exact_errors || self.reconsume.get() || self.ignore_lf.get() {
+        if self.opts.exact_errors || self.reconsume || self.ignore_lf.get() {
             return self.get_char(input).map(FromSet);
         }
 
@@ -313,7 +313,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     // BufferQueue::eat.
     //
     // NB: this doesn't set the current input character.
-    fn eat(&self, input: &BufferQueue, pat: &str, eq: fn(&u8, &u8) -> bool) -> Option<bool> {
+    fn eat(&mut self, input: &BufferQueue, pat: &str, eq: fn(&u8, &u8) -> bool) -> Option<bool> {
         if self.ignore_lf.get() {
             self.ignore_lf.set(false);
             if self.peek(input) == Some('\n') {
@@ -567,21 +567,21 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
     }
 
     fn peek(&self, input: &BufferQueue) -> Option<char> {
-        if self.reconsume.get() {
+        if self.reconsume {
             Some(self.current_char.get())
         } else {
             input.peek()
         }
     }
 
-    fn discard_char(&self, input: &BufferQueue) {
+    fn discard_char(&mut self, input: &BufferQueue) {
         // peek() deals in un-processed characters (no newline normalization), while get_char()
         // does.
         //
         // since discard_char is supposed to be used in combination with peek(), discard_char must
         // discard a single raw input character, not a normalized newline.
-        if self.reconsume.get() {
-            self.reconsume.set(false);
+        if self.reconsume {
+            self.reconsume = false;
         } else {
             input.next();
         }
@@ -644,9 +644,9 @@ macro_rules! go (
     ( $me:ident : to $s:ident $k1:expr           ) => ({ $me.state = states::$s($k1); return ProcessResult::Continue;      });
     ( $me:ident : to $s:ident $k1:ident $k2:expr ) => ({ $me.state = states::$s($k1($k2)); return ProcessResult::Continue; });
 
-    ( $me:ident : reconsume $s:ident                    ) => ({ $me.reconsume.set(true); go!($me: to $s);         });
-    ( $me:ident : reconsume $s:ident $k1:expr           ) => ({ $me.reconsume.set(true); go!($me: to $s $k1);     });
-    ( $me:ident : reconsume $s:ident $k1:ident $k2:expr ) => ({ $me.reconsume.set(true); go!($me: to $s $k1 $k2); });
+    ( $me:ident : reconsume $s:ident                    ) => ({ $me.reconsume = true; go!($me: to $s);         });
+    ( $me:ident : reconsume $s:ident $k1:expr           ) => ({ $me.reconsume = true; go!($me: to $s $k1);     });
+    ( $me:ident : reconsume $s:ident $k1:ident $k2:expr ) => ({ $me.reconsume = true; go!($me: to $s $k1 $k2); });
 
     ( $me:ident : consume_char_ref             ) => ({ $me.start_consuming_character_reference(); return ProcessResult::Continue;         });
 
@@ -705,7 +705,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
 
                 #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))]
                 let set_result = if !(self.opts.exact_errors
-                    || self.reconsume.get()
+                    || self.reconsume
                     || self.ignore_lf.get())
                     && Self::is_supported_simd_feature_detected()
                 {
