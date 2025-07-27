@@ -26,7 +26,6 @@ use crate::util::str::lower_ascii_letter;
 use log::{debug, trace};
 use markup5ever::{ns, small_char_set, TokenizerResult};
 use std::borrow::Cow::{self, Borrowed};
-use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::mem;
 
@@ -161,7 +160,7 @@ pub struct Tokenizer<Sink> {
     time_in_sink: u64,
 
     /// Track current line
-    current_line: Cell<u64>,
+    current_line: u64,
 }
 
 impl<Sink: TokenSink> Tokenizer<Sink> {
@@ -195,7 +194,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             temp_buf: StrTendril::new(),
             state_profile: BTreeMap::new(),
             time_in_sink: 0,
-            current_line: Cell::new(1),
+            current_line: 1,
         }
     }
 
@@ -224,11 +223,11 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
 
     fn process_token(&mut self, token: Token) -> TokenSinkResult<Sink::Handle> {
         if self.opts.profile {
-            let (ret, dt) = time!(self.sink.process_token(token, self.current_line.get()));
+            let (ret, dt) = time!(self.sink.process_token(token, self.current_line));
             self.time_in_sink += dt;
             ret
         } else {
-            self.sink.process_token(token, self.current_line.get())
+            self.sink.process_token(token, self.current_line)
         }
     }
 
@@ -256,7 +255,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         }
 
         if c == '\n' {
-            self.current_line.set(self.current_line.get() + 1);
+            self.current_line += 1;
         }
 
         if self.opts.exact_errors
@@ -1942,7 +1941,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             SetResult::NotFromSet(consumed_chunk)
         };
 
-        self.current_line.set(self.current_line.get() + n_newlines);
+        self.current_line += n_newlines;
 
         Some(set_result)
     }
