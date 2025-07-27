@@ -470,7 +470,11 @@ where
 {
     type Handle = Handle;
 
-    fn process_token(&self, token: tokenizer::Token, line_number: u64) -> TokenSinkResult<Handle> {
+    fn process_token(
+        &mut self,
+        token: tokenizer::Token,
+        line_number: u64,
+    ) -> TokenSinkResult<Handle> {
         if line_number != self.current_line.get() {
             self.sink.set_current_line(line_number);
         }
@@ -539,7 +543,7 @@ where
         self.process_to_completion(token)
     }
 
-    fn end(&self) {
+    fn end(&mut self) {
         for elem in self.open_elems.borrow_mut().drain(..).rev() {
             self.sink.pop(&elem);
         }
