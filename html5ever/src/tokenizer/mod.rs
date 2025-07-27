@@ -26,7 +26,7 @@ use crate::util::str::lower_ascii_letter;
 use log::{debug, trace};
 use markup5ever::{ns, small_char_set, TokenizerResult};
 use std::borrow::Cow::{self, Borrowed};
-use std::cell::{Cell, RefCell, RefMut};
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::mem;
 
@@ -146,7 +146,7 @@ pub struct Tokenizer<Sink> {
     current_comment: StrTendril,
 
     /// Current doctype token.
-    current_doctype: RefCell<Doctype>,
+    current_doctype: Doctype,
 
     /// Last start tag name, for use in checking "appropriate end tag".
     last_start_tag_name: RefCell<Option<LocalName>>,
@@ -190,7 +190,7 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
             current_attr_name: StrTendril::new(),
             current_attr_value: StrTendril::new(),
             current_comment: StrTendril::new(),
-            current_doctype: RefCell::new(Doctype::default()),
+            current_doctype: Doctype::default(),
             last_start_tag_name: RefCell::new(start_tag_name),
             temp_buf: RefCell::new(StrTendril::new()),
             state_profile: RefCell::new(BTreeMap::new()),
@@ -531,21 +531,20 @@ impl<Sink: TokenSink> Tokenizer<Sink> {
         }
     }
 
-    fn emit_current_doctype(&self) {
-        let doctype = self.current_doctype.take();
+    fn emit_current_doctype(&mut self) {
+        let doctype = mem::take(&mut self.current_doctype);
         self.process_token_and_continue(DoctypeToken(doctype));
     }
 
-    fn doctype_id(&self, kind: DoctypeIdKind) -> RefMut<'_, Option<StrTendril>> {
-        let current_doctype = self.current_doctype.borrow_mut();
+    fn doctype_id(&mut self, kind: DoctypeIdKind) -> &mut Option<StrTendril> {
         match kind {
-            Public => RefMut::map(current_doctype, |d| &mut d.public_id),
-            System => RefMut::map(current_doctype, |d| &mut d.system_id),
+            Public => &mut self.current_doctype.public_id,
+            System => &mut self.current_doctype.system_id,
         }
     }
 
-    fn clear_doctype_id(&self, kind: DoctypeIdKind) {
-        let mut id = self.doctype_id(kind);
+    fn clear_doctype_id(&mut self, kind: DoctypeIdKind) {
+        let id = self.doctype_id(kind);
         match *id {
             Some(ref mut s) => s.clear(),
             None => *id = Some(StrTendril::new()),
@@ -609,11 +608,11 @@ macro_rules! shorthand (
     ( $me:ident : append_comment $c:expr           ) => ( $me.current_comment.push_slice($c)     );
     ( $me:ident : emit_comment                     ) => ( $me.emit_current_comment()                          );
     ( $me:ident : clear_comment                    ) => ( $me.current_comment.clear()            );
-    ( $me:ident : create_doctype                   ) => ( *$me.current_doctype.borrow_mut() = Doctype::default() );
-    ( $me:ident : push_doctype_name $c:expr        ) => ( option_push(&mut $me.current_doctype.borrow_mut().name, $c) );
+    ( $me:ident : create_doctype                   ) => ( $me.current_doctype = Doctype::default() );
+    ( $me:ident : push_doctype_name $c:expr        ) => ( option_push(&mut $me.current_doctype.name, $c) );
     ( $me:ident : push_doctype_id $k:ident $c:expr ) => ( option_push(&mut $me.doctype_id($k), $c)            );
     ( $me:ident : clear_doctype_id $k:ident        ) => ( $me.clear_doctype_id($k)                            );
-    ( $me:ident : force_quirks                     ) => ( $me.current_doctype.borrow_mut().force_quirks = true);
+    ( $me:ident : force_quirks                     ) => ( $me.current_doctype.force_quirks = true);
     ( $me:ident : emit_doctype                     ) => ( $me.emit_current_doctype()                          );
 );
 
