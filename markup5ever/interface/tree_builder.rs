@@ -123,6 +123,8 @@ pub trait TreeSink {
     where
         Self: 'a;
 
+    fn foo();
+
     /// Consume this sink and return the overall result of parsing.
     ///
     /// TODO:This should default to `fn finish(self) -> Self::Output { self }`,
