@@ -124,3 +124,24 @@ jobs:
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1
 
+  semver_check:
+    name: SemVer compatiblity check
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write # To add labels to PR
+    steps:
+      - name: Install cargo-semver-checks
+        run: |
+          cargo install cargo-semver-checks --locked
+      - name: Run cargo-semver-checks
+        id: semver
+        run: |
+          # Check for breaking changes and log output
+          (cargo semver-checks --baseline-rev main && echo "::set-output name=label::non-breaking") || echo "::set-output name=label::breaking"
+      - name: Assign labels
+        run: gh issue edit "$NUMBER" --add-label "$LABELS"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+          LABELS: ${{ steps.result.outputs.label }}
