@@ -1,4 +1,4 @@
-# html5ever
+# html5ever!
 
 [![Build Status](https://github.com/servo/html5ever/actions/workflows/main.yml/badge.svg)](https://github.com/servo/html5ever/actions)
 [![crates.io](https://img.shields.io/crates/v/html5ever.svg)](https://crates.io/crates/html5ever)
